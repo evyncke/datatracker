@@ -15,6 +15,8 @@
 #
 #   DEBUG_TERM_TIMING - if non-empty, writes debug messages during shutdown after a TERM signal
 #
+#   DEV_MODE - if non-empty, restart celery worker on Python file change
+#
 WORKSPACEDIR="/workspace"
 CELERY_ROLE="${CELERY_ROLE:-worker}"
 
@@ -74,6 +76,9 @@ cleanup () {
   fi
 }
 
+echo "Running checks as root to apply patches..."
+/usr/local/bin/python $WORKSPACEDIR/ietf/manage.py check
+
 if [[ "${CELERY_ROLE}" == "worker" ]]; then
     echo "Running initial checks..."
     # Run checks as celery worker if one was specified
@@ -82,6 +87,18 @@ fi
 
 trap 'trap "" TERM; cleanup' TERM
 # start celery in the background so we can trap the TERM signal
-celery --app="${CELERY_APP:-ietf}" "${CELERY_OPTS[@]}" "$@" &
-celery_pid=$!
+if [[ -n "${DEV_MODE}" ]]; then
+  watchmedo auto-restart \
+            --patterns '*.py' \
+            --directory 'ietf' \
+            --recursive \
+            --debounce-interval 5 \
+            -- \
+            celery --app="${CELERY_APP:-ietf}" "${CELERY_OPTS[@]}" "$@" &
+  celery_pid=$!
+else
+  celery --app="${CELERY_APP:-ietf}" "${CELERY_OPTS[@]}" "$@" &
+  celery_pid=$!
+fi
+
 wait "${celery_pid}"

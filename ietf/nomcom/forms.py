@@ -175,7 +175,7 @@ class MergeNomineeForm(forms.Form):
         secondary_emails = self.cleaned_data.get("secondary_emails")
         if primary_email and secondary_emails:
             if primary_email in secondary_emails:
-                msg = "Primary and secondary email address must be differents"
+                msg = "Primary and secondary email address must be different"
                 self._errors["primary_email"] = self.error_class([msg])
         return self.cleaned_data
 
@@ -343,7 +343,7 @@ class NominateForm(forms.ModelForm):
                           'year': self.nomcom.year(),
                       }
                 path = nomcom_template_path + NOMINATION_RECEIPT_TEMPLATE
-                send_mail(None, to_email, from_email, subject, path, context, cc=cc)
+                send_mail(None, to_email, from_email, subject, path, context, cc=cc, copy=False, save=False)
 
         return nomination
 
@@ -458,7 +458,7 @@ class NominateNewPersonForm(forms.ModelForm):
                           'year': self.nomcom.year(),
                       }
                 path = nomcom_template_path + NOMINATION_RECEIPT_TEMPLATE
-                send_mail(None, to_email, from_email, subject, path, context, cc=cc)
+                send_mail(None, to_email, from_email, subject, path, context, cc=cc, copy=False, save=False)
 
         return nomination
 
@@ -551,7 +551,7 @@ class FeedbackForm(forms.ModelForm):
                        }
                 path = nomcom_template_path + FEEDBACK_RECEIPT_TEMPLATE
                 # TODO - make the thing above more generic
-                send_mail(None, to_email, from_email, subject, path, context, cc=cc, copy=False)
+                send_mail(None, to_email, from_email, subject, path, context, cc=cc, copy=False, save=False)
 
     class Meta:
         model = Feedback

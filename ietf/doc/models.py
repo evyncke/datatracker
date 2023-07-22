@@ -6,10 +6,15 @@ import datetime
 import logging
 import io
 import os
+
+import django.db
 import rfc2html
 
+from pathlib import Path
+from lxml import etree
 from typing import Optional, TYPE_CHECKING
 from weasyprint import HTML as wpHTML
+from weasyprint.text.fonts import FontConfiguration
 
 from django.db import models
 from django.core import checks
@@ -19,8 +24,9 @@ from django.urls import reverse as urlreverse
 from django.contrib.contenttypes.models import ContentType
 from django.conf import settings
 from django.utils import timezone
-from django.utils.encoding import force_text
+from django.utils.encoding import force_str
 from django.utils.html import mark_safe # type:ignore
+from django.contrib.staticfiles import finders
 
 import debug                            # pyflakes:ignore
 
@@ -53,16 +59,22 @@ class StateType(models.Model):
 @checks.register('db-consistency')
 def check_statetype_slugs(app_configs, **kwargs):
     errors = []
-    state_type_slugs = [ t.slug for t in StateType.objects.all() ]
-    for type in DocTypeName.objects.all():
-        if not type.slug in state_type_slugs:
-            errors.append(checks.Error(
-                "The document type '%s (%s)' does not have a corresponding entry in the doc.StateType table" % (type.name, type.slug),
-                hint="You should add a doc.StateType entry with a slug '%s' to match the DocTypeName slug."%(type.slug),
-                obj=type,
-                id='datatracker.doc.E0015',
-            ))
-    return errors
+    try:
+        state_type_slugs = [ t.slug for t in StateType.objects.all() ]
+    except django.db.ProgrammingError:
+        # When running initial migrations on an empty DB, attempting to retrieve StateType will raise a
+        # ProgrammingError. Until Django 3, there is no option to skip the checks.
+        return []
+    else:
+        for type in DocTypeName.objects.all():
+            if not type.slug in state_type_slugs:
+                errors.append(checks.Error(
+                    "The document type '%s (%s)' does not have a corresponding entry in the doc.StateType table" % (type.name, type.slug),
+                    hint="You should add a doc.StateType entry with a slug '%s' to match the DocTypeName slug."%(type.slug),
+                    obj=type,
+                    id='datatracker.doc.E0015',
+                ))
+        return errors
 
 class State(models.Model):
     type = ForeignKey(StateType)
@@ -94,7 +106,7 @@ class DocumentInfo(models.Model):
 
     states = models.ManyToManyField(State, blank=True) # plain state (Active/Expired/...), IESG state, stream state
     tags = models.ManyToManyField(DocTagName, blank=True) # Revised ID Needed, ExternalParty, AD Followup, ...
-    stream = ForeignKey(StreamName, blank=True, null=True) # IETF, IAB, IRTF, Independent Submission
+    stream = ForeignKey(StreamName, blank=True, null=True) # IETF, IAB, IRTF, Independent Submission, Editorial
     group = ForeignKey(Group, blank=True, null=True) # WG, RG, IAB, IESG, Edu, Tools
 
     abstract = models.TextField(blank=True)
@@ -102,13 +114,12 @@ class DocumentInfo(models.Model):
     pages = models.IntegerField(blank=True, null=True)
     words = models.IntegerField(blank=True, null=True)
     formal_languages = models.ManyToManyField(FormalLanguageName, blank=True, help_text="Formal languages used in document")
-    order = models.IntegerField(default=1, blank=True) # This is probably obviated by SessionPresentaion.order
     intended_std_level = ForeignKey(IntendedStdLevelName, verbose_name="Intended standardization level", blank=True, null=True)
     std_level = ForeignKey(StdLevelName, verbose_name="Standardization level", blank=True, null=True)
     ad = ForeignKey(Person, verbose_name="area director", related_name='ad_%(class)s_set', blank=True, null=True)
     shepherd = ForeignKey(Email, related_name='shepherd_%(class)s_set', blank=True, null=True)
     expires = models.DateTimeField(blank=True, null=True)
-    notify = models.CharField(max_length=255, blank=True)
+    notify = models.TextField(max_length=1023, blank=True)
     external_url = models.URLField(blank=True)
     uploaded_filename = models.TextField(blank=True)
     note = models.TextField(blank=True)
@@ -215,7 +226,7 @@ class DocumentInfo(models.Model):
         which returns an url to the datatracker page for the document.   
         """
         # If self.external_url truly is an url, use it.  This is a change from
-        # the earlier resulution order, but there's at the moment one single
+        # the earlier resolution order, but there's at the moment one single
         # instance which matches this (with correct results), so we won't
         # break things all over the place.
         if not hasattr(self, '_cached_href'):
@@ -541,6 +552,49 @@ class DocumentInfo(models.Model):
     def text_or_error(self):
         return self.text() or "Error; cannot read '%s'"%self.get_base_name()
 
+    def html_body(self, classes=""):
+        if self.get_state_slug() == "rfc":
+            try:
+                html = Path(
+                    os.path.join(settings.RFC_PATH, self.canonical_name() + ".html")
+                ).read_text()
+            except (IOError, UnicodeDecodeError):
+                return None
+        else:
+            try:
+                html = Path(
+                    os.path.join(
+                        settings.INTERNET_ALL_DRAFTS_ARCHIVE_DIR,
+                        self.name + "-" + self.rev + ".html",
+                    )
+                ).read_text()
+            except (IOError, UnicodeDecodeError):
+                return None
+
+        # If HTML was generated by rfc2html, do not return it. Caller
+        # will use htmlize() to use a more current rfc2html to
+        # generate an HTMLized version. TODO: There should be a
+        # better way to determine how an HTML format was generated.
+        if html.startswith("<pre>"):
+            return None
+
+        # get body
+        etree_html = etree.HTML(html)
+        if etree_html is None:
+            return None
+        body = etree_html.xpath("//body")[0]
+        body.tag = "div"
+        if classes:
+            body.attrib["class"] = classes
+
+        # remove things
+        for tag in ["script"]:
+            for t in body.xpath(f"//{tag}"):
+                t.getparent().remove(t)
+        html = etree.tostring(body, encoding=str, method="html")
+
+        return html
+
     def htmlized(self):
         name = self.get_base_name()
         text = self.text()
@@ -560,23 +614,38 @@ class DocumentInfo(models.Model):
                 # The path here has to match the urlpattern for htmlized
                 # documents in order to produce correct intra-document links
                 html = rfc2html.markup(text, path=settings.HTMLIZER_URL_PREFIX)
+                html = f'<div class="rfcmarkup">{html}</div>'
                 if html:
                     cache.set(cache_key, html, settings.HTMLIZER_CACHE_TIME)
         return html
 
     def pdfized(self):
         name = self.get_base_name()
-        text = self.text()
-        cache = caches['pdfized']
-        cache_key = name.split('.')[0]
+        text = self.html_body(classes="rfchtml")
+        stylesheets = [finders.find("ietf/css/document_html_referenced.css")]
+        if text:
+            stylesheets.append(finders.find("ietf/css/document_html_txt.css"))
+        else:
+            text = self.htmlized()
+        stylesheets.append(f'{settings.STATIC_IETF_ORG_INTERNAL}/fonts/noto-sans-mono/import.css')
+
+        cache = caches["pdfized"]
+        cache_key = name.split(".")[0]
         try:
             pdf = cache.get(cache_key)
         except EOFError:
             pdf = None
         if not pdf:
-            html = rfc2html.markup(text, path=settings.PDFIZER_URL_PREFIX)
             try:
-                pdf = wpHTML(string=html.replace('\xad','')).write_pdf(stylesheets=[io.BytesIO(b'html { font-size: 94%;}')])
+                font_config = FontConfiguration()
+                pdf = wpHTML(
+                    string=text, base_url=settings.IDTRACKER_BASE_URL
+                ).write_pdf(
+                    stylesheets=stylesheets,
+                    font_config=font_config,
+                    presentational_hints=True,
+                    optimize_images=True,
+                )
             except AssertionError:
                 pdf = None
             if pdf:
@@ -921,7 +990,7 @@ class Document(DocumentInfo):
 
     def last_presented(self):
         """ returns related SessionPresentation objects for the most recent meeting in the past"""
-        # Assumes no two meetings have the same start date - if the assumption is violated, one will be chosen arbitrariy
+        # Assumes no two meetings have the same start date - if the assumption is violated, one will be chosen arbitrarily
         today = date_today()
         candidate_presentations = self.sessionpresentation_set.filter(session__meeting__date__lte=today)
         candidate_meetings = set([p.session.meeting for p in candidate_presentations if p.session.meeting.end_date()<today])
@@ -1065,7 +1134,7 @@ class DocHistory(DocumentInfo):
     name = models.CharField(max_length=255)
 
     def __str__(self):
-        return force_text(self.doc.name)
+        return force_str(self.doc.name)
 
     def get_related_session(self):
         return self.doc.get_related_session()
@@ -1127,7 +1196,7 @@ class DocAlias(models.Model):
         return self.docs.first()
 
     def __str__(self):
-        return u"%s-->%s" % (self.name, ','.join([force_text(d.name) for d in self.docs.all() if isinstance(d, Document) ]))
+        return u"%s-->%s" % (self.name, ','.join([force_str(d.name) for d in self.docs.all() if isinstance(d, Document) ]))
     document_link = admin_link("document")
     class Meta:
         verbose_name = "document alias"
@@ -1283,7 +1352,7 @@ class BallotDocEvent(DocEvent):
     ballot_type = ForeignKey(BallotType)
 
     def active_balloter_positions(self):
-        """Return dict mapping each active AD or IRSG member to a current ballot position (or None if they haven't voted)."""
+        """Return dict mapping each active member of the balloting body to a current ballot position (or None if they haven't voted)."""
         res = {}
     
         active_balloters = get_active_balloters(self.ballot_type)
@@ -1320,13 +1389,13 @@ class BallotDocEvent(DocEvent):
                 if e.pos != prev:
                     latest.old_positions.append(e.pos)
 
-        # get rid of trailling "No record" positions, some old ballots
+        # get rid of trailing "No record" positions, some old ballots
         # have plenty of these
         for p in positions:
             while p.old_positions and p.old_positions[-1].slug == "norecord":
                 p.old_positions.pop()
 
-        # add any missing ADs/IRSGers through fake No Record events
+        # add any missing balloters through fake No Record events
         if self.doc.active_ballot() == self:
             norecord = BallotPositionName.objects.get(slug="norecord")
             for balloter in active_balloters:

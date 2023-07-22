@@ -10,6 +10,11 @@ $enable-negative-margins: true;
 
 $popover-max-width: 100%;
 
+// Override default fonts
+
+$font-family-sans-serif: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+$font-family-monospace: "Noto Sans Mono", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
 // Only import what we need:
 
 @import "bootstrap/scss/variables";
@@ -97,6 +102,11 @@ pre {
     width: 60px;
 }
 
+// Style preformatted alert messages better.
+.preformatted {
+    white-space: pre-line;
+}
+
 .leftmenu {
     width: 13em;
 
@@ -168,8 +178,9 @@ table tbody.meta {
     }
 }
 
-// Try and hyphenate table headings
-th {
+// Try and hyphenate table headings and other things
+th,
+.hyphenate {
     hyphens: auto;
 }
 
@@ -208,6 +219,23 @@ th {
     max-width: 300px;
 }
 
+// Make revision numbers pagination items fixed-width
+.revision-list {
+    .page-item {
+        width: 2.2rem;
+    }
+
+    .page-item.rfc {
+        width: 6.6rem;
+    }
+}
+
+.charter.revision-list {
+    .page-item {
+        width: auto;
+    }
+}
+
 // Style the photo cards
 .photo {
     width: 12em;
@@ -244,7 +272,7 @@ th {
 }
 
 // Styles for d3.js graphical SVG timelines
-#timeline {
+#doc-timeline {
     font-size: small;
 
     .axis path,

@@ -15,7 +15,7 @@ from django.core.management.base import CommandError
 from django.core.management.commands.loaddata import Command as LoadCommand, humanize
 from django.db import DatabaseError, IntegrityError, router, transaction
 from django.db.models import ManyToManyField
-from django.utils.encoding import force_text
+from django.utils.encoding import force_str
 
 from ietf.utils.models import ForeignKey
 
@@ -188,7 +188,7 @@ class Command(LoadCommand):
                                             #debug.say("Found matching object with new pk: %s" % (obj.object.pk, ))
                             new_pk = obj.object.pk
                             if new_pk != old_pk:
-                                # Update other objects refering to this
+                                # Update other objects referring to this
                                 # object to use the new pk
                                 #debug.show('old_pk, new_pk')
                                 mname = model._meta.app_label + '.' + model.__name__
@@ -234,7 +234,7 @@ class Command(LoadCommand):
                                 'object_name': obj.object._meta.object_name,
                                 'pk': obj.object.pk,
                                 'data': obj_to_dict(obj.object),
-                                'error_msg': force_text(e)
+                                'error_msg': force_str(e)
                             },)
                             raise
                 if objects and show_progress:

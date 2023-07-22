@@ -17,7 +17,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
-from django.utils.encoding import force_text
+from django.utils.encoding import force_str
 from django.utils.html import escape
 
 import debug                            # pyflakes:ignore
@@ -163,7 +163,7 @@ def change_state(request, name, option=None):
                 if message or charter_state.slug == "intrev" or charter_state.slug == "extrev":
                     email_admin_re_charter(request, group, "Charter state changed to \"%s\"" % charter_state.name, message,'charter_state_edit_admin_needed')
 
-                # TODO - do we need a seperate set of recipients for state changes to charters vrs other kind of documents
+                # TODO - do we need a separate set of recipients for state changes to charters vrs other kind of documents
                 email_state_changed(request, charter, "State changed to %s." % charter_state, 'doc_state_edited')
 
                 if charter_state.slug == "intrev" and group.type_id == "wg":
@@ -821,7 +821,7 @@ def charter_with_milestones_txt(request, name, rev):
 
     try:
         with io.open(os.path.join(settings.CHARTER_PATH, filename), 'r') as f:
-            charter_text = force_text(f.read(), errors='ignore')
+            charter_text = force_str(f.read(), errors='ignore')
     except IOError:
         charter_text = "Error reading charter text %s" % filename
 

@@ -10,11 +10,11 @@ import re
 import requests
 
 from email.utils import parsedate_to_datetime
+from urllib.parse import quote as urlquote
 
 from django.conf import settings
 from django.utils import timezone
 from django.utils.encoding import smart_bytes, force_str
-from django.utils.http import urlquote
 
 import debug                            # pyflakes:ignore
 
@@ -195,7 +195,7 @@ def update_history_with_changes(changes, send_email=True):
                     continue
 
                 # the naive way of extracting prev_state here means
-                # that we assume these changes are cronologically
+                # that we assume these changes are chronologically
                 # applied
                 prev_state = doc.get_state(state_type)
                 e = add_state_change_event(doc, system, prev_state, state, timestamp=timestamp)

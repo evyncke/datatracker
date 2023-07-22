@@ -14,7 +14,7 @@ from textwrap import wrap
 from django.conf import settings
 from django.urls import reverse as urlreverse
 
-from ietf.doc.factories import DocumentFactory, IndividualRfcFactory, WgRfcFactory
+from ietf.doc.factories import DocumentFactory, IndividualRfcFactory, WgRfcFactory, DocEventFactory
 from ietf.doc.models import ( Document, DocAlias, State, DocEvent,
     BallotPositionDocEvent, NewRevisionDocEvent, TelechatDocEvent, WriteupDocEvent )
 from ietf.doc.utils import create_ballot_if_not_open
@@ -86,6 +86,16 @@ class StatusChangeTests(TestCase):
         status_change = Document.objects.get(name='status-change-imaginary-new2')
         self.assertIsNone(status_change.ad)        
 
+        # Verify that the right thing happens if a control along the way uppercases RFC
+        r = self.client.post(url,dict(
+            document_name="imaginary-new3",title="A new imaginary status change",
+            create_in_state=state_strpk,notify='ipu@ietf.org',new_relation_row_blah="RFC9999",
+            statchg_relation_row_blah="tois")
+        )
+        self.assertEqual(r.status_code, 302)
+        status_change = Document.objects.get(name='status-change-imaginary-new3')
+        self.assertTrue(status_change.relateddocument_set.filter(relationship__slug='tois',target__name='rfc9999'))
+
 
     def test_change_state(self):
 
@@ -147,8 +157,8 @@ class StatusChangeTests(TestCase):
         r = self.client.get(url)
         self.assertEqual(r.status_code, 200)
         q = PyQuery(r.content)
-        self.assertEqual(len(q('form input[name=notify]')),1)
-        self.assertEqual(doc.notify,q('form input[name=notify]')[0].value)
+        self.assertEqual(len(q('form textarea[name=notify]')), 1)
+        self.assertEqual(doc.notify, q('form textarea[name=notify]')[0].value.strip())
 
         # change notice list
         newlist = '"Foo Bar" <foo@bar.baz.com>'
@@ -169,8 +179,8 @@ class StatusChangeTests(TestCase):
         # Regenerate does not save!
         self.assertEqual(doc.notify,newlist)
         q = PyQuery(r.content)
-        formlist = q('form input[name=notify]')[0].value
-        self.assertEqual(None,formlist)
+        formlist = q('form textarea[name=notify]')[0].value.strip()
+        self.assertEqual("", formlist)
 
     def test_edit_title(self):
         doc = Document.objects.get(name='status-change-imaginary-mid-review')
@@ -289,7 +299,19 @@ class StatusChangeTests(TestCase):
         self.assertEqual(r.status_code,200)
         self.assertContains(r,  'RFC9999 from Proposed Standard to Internet Standard')
         self.assertContains(r,  'RFC9998 from Informational to Historic')
-      
+        q = PyQuery(r.content)
+        self.assertEqual(len(q("button[name='send_last_call_request']")), 1)
+
+        # Make sure request LC isn't offered with no responsible AD.
+        doc.ad = None
+        doc.save_with_history([DocEventFactory(doc=doc)])
+        r = self.client.get(url)
+        self.assertEqual(r.status_code,200) 
+        q = PyQuery(r.content)
+        self.assertEqual(len(q("button[name='send_last_call_request']")), 0)
+        doc.ad = Person.objects.get(name='Ad No2')
+        doc.save_with_history([DocEventFactory(doc=doc)])
+
         # request last call
         messages_before = len(outbox)
         r = self.client.post(url,dict(last_call_text='stuff',send_last_call_request='Save+and+Request+Last+Call'))

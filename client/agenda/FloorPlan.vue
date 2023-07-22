@@ -5,7 +5,6 @@
       span #[strong IETF {{agendaStore.meeting.number}}] Floor Plan
       .meeting-h1-badges.d-none.d-sm-flex
         span.meeting-warning(v-if='agendaStore.meeting.warningNote') {{agendaStore.meeting.warningNote}}
-        span.meeting-beta BETA
     h4
       span {{agendaStore.meeting.city}}, {{ meetingDate }}
 
@@ -188,10 +187,10 @@ function handleDesiredRoom () {
       if (rm) {
         state.currentFloor = fl.id
         state.currentRoom = rm.id
+        state.desiredRoom = null
         break
       }
     }
-    state.desiredRoom = null
   }
 }
 

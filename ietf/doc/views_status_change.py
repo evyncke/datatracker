@@ -15,7 +15,7 @@ from django.http import Http404, HttpResponseRedirect
 from django.urls import reverse
 from django.template.loader import render_to_string
 from django.conf import settings
-from django.utils.encoding import force_text
+from django.utils.encoding import force_str
 from django.utils.html import escape
 
 import debug                            # pyflakes:ignore
@@ -418,7 +418,7 @@ def clean_helper(form, formtype):
         rfc_fields = {}
         status_fields={}
         for k in sorted(form.data.keys()):
-            v = form.data[k]
+            v = form.data[k].lower()
             if k.startswith('new_relation_row'):
                 if re.match(r'\d{1,4}',v):
                     v = 'rfc'+v
@@ -468,7 +468,13 @@ class StartStatusChangeForm(forms.Form):
     ad = forms.ModelChoiceField(Person.objects.filter(role__name="ad", role__group__state="active",role__group__type='area').order_by('name'), 
                                 label="Shepherding AD", empty_label="(None)", required=False)
     create_in_state = forms.ModelChoiceField(State.objects.filter(type="statchg", slug__in=("needshep", "adrev")), empty_label=None, required=False)
-    notify = forms.CharField(max_length=255, label="Notice emails", help_text="Separate email addresses with commas.", required=False)
+    notify = forms.CharField(
+        widget=forms.Textarea,
+        max_length=1023,
+        label="Notice emails",
+        help_text="Separate email addresses with commas.",
+        required=False,
+    )
     telechat_date = forms.TypedChoiceField(coerce=lambda x: datetime.datetime.strptime(x, '%Y-%m-%d').date(), empty_value=None, required=False, widget=forms.Select(attrs={'onchange':'make_bold()'}))
     relations={}                        # type: Dict[str, str]
 
@@ -525,7 +531,7 @@ def rfc_status_changes(request):
                           )
 
 @role_required("Area Director","Secretariat")
-def start_rfc_status_change(request,name):
+def start_rfc_status_change(request, name=None):
     """Start the RFC status change review process, setting the initial shepherding AD, and possibly putting the review on a telechat."""
 
     if name:
@@ -659,7 +665,7 @@ def generate_last_call_text(request, doc):
     e.doc = doc
     e.rev = doc.rev
     e.desc = 'Last call announcement was generated'
-    e.text = force_text(new_text)
+    e.text = force_str(new_text)
     e.save()
 
     return e 
@@ -679,7 +685,7 @@ def last_call(request, name):
     form = LastCallTextForm(initial=dict(last_call_text=escape(last_call_event.text)))
 
     if request.method == 'POST':
-        if "save_last_call_text" in request.POST or "send_last_call_request" in request.POST:
+        if "save_last_call_text" in request.POST or ("send_last_call_request" in request.POST and status_change.ad is not None):
             form = LastCallTextForm(request.POST)
             if form.is_valid():
                 events = []

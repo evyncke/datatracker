@@ -1,7 +1,7 @@
 # Copyright The IETF Trust 2013-2020, All Rights Reserved
 
 from django.conf import settings
-from django.conf.urls import include
+from django.urls import include
 from django.views.generic import RedirectView
 
 from ietf.community import views as community_views
@@ -20,7 +20,6 @@ info_detail_urls = [
     url(r'^documents/subscription/$', community_views.subscription),
     url(r'^charter/$', views.group_about),
     url(r'^about/$', views.group_about),
-    url(r'^about/rendertest/$', views.group_about_rendertest),
     url(r'^about/status/$', views.group_about_status),
     url(r'^about/status/edit/$', views.group_about_status_edit),
     url(r'^about/status/meeting/(?P<num>\d+)/$', views.group_about_status_meeting),
@@ -53,6 +52,7 @@ info_detail_urls = [
 
 group_urls = [
     url(r'^$', views.active_groups), 
+    url(r'^groupstats.json', views.group_stats_data, None, 'ietf.group.views.group_stats_data'),
     url(r'^groupmenu.json', views.group_menu_data, None, 'ietf.group.views.group_menu_data'),
     url(r'^chartering/$', views.chartering_groups),
     url(r'^chartering/create/(?P<group_type>(wg|rg))/$', views.edit, {'action': "charter"}),

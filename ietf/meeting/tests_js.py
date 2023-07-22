@@ -7,9 +7,7 @@ import datetime
 import shutil
 import os
 import re
-from unittest import skipIf
 
-import django
 from django.utils import timezone
 from django.utils.text import slugify
 from django.db.models import F
@@ -134,7 +132,7 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         self.assertEqual(session_info_container.find_element(By.CSS_SELECTOR, ".other-session .time").text, "not yet scheduled")
 
         # deselect
-        self.driver.find_element(By.CSS_SELECTOR, '.drop-target').click()
+        self.driver.find_element(By.CSS_SELECTOR, '.timeslot[data-type="regular"] .drop-target').click()
 
         self.assertEqual(session_info_container.find_elements(By.CSS_SELECTOR, ".title"), [])
         self.assertNotIn('other-session-selected', s2b_element.get_attribute('class'))
@@ -193,9 +191,9 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
 
         # violated due to constraints - both the timeslot and its timeslot label
         self.assertTrue(self.driver.find_elements(By.CSS_SELECTOR, '#timeslot{}.would-violate-hint'.format(slot1.pk)))
-        # Find the timeslot label for slot1 - it's the first timeslot in the first room group
+        # Find the timeslot label for slot1 - it's the first timeslot in the room group containing room 1
         slot1_roomgroup_elt = self.driver.find_element(By.CSS_SELECTOR,
-            '.day-flow .day:first-child .room-group:nth-child(2)'  # count from 2 - first-child is the day label
+            f'.day-flow .day:first-child .room-group[data-rooms="{room1.pk}"]'
         )
         self.assertTrue(
             slot1_roomgroup_elt.find_elements(By.CSS_SELECTOR,
@@ -833,7 +831,7 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
     def test_session_constraint_hints(self):
         """Selecting a session should mark conflicting sessions
 
-        To test for recurrence of https://trac.ietf.org/trac/ietfdb/ticket/3327 need to have some constraints that
+        To test for recurrence of https://github.com/ietf-tools/datatracker/issues/3327 need to have some constraints that
         do not conflict. Testing with only violated constraints does not exercise the code adequately.
         """
         meeting = MeetingFactory(type_id='ietf', date=date_today(), populate_schedule=False)
@@ -880,42 +878,6 @@ class EditMeetingScheduleTests(IetfSeleniumTestCase):
         self.assertNotIn('would-violate-hint', session_elements[4].get_attribute('class'),
                          'Constraint violation should not be indicated on non-conflicting session')
 
-@ifSeleniumEnabled
-@skipIf(django.VERSION[0]==2, "Skipping test with race conditions under Django 2")
-class ScheduleEditTests(IetfSeleniumTestCase):
-    def testUnschedule(self):
-
-        meeting = make_meeting_test_data()
-        
-        self.assertEqual(SchedTimeSessAssignment.objects.filter(session__meeting=meeting, session__group__acronym='mars', schedule__name='test-schedule').count(),1)
-
-
-        ss = list(SchedTimeSessAssignment.objects.filter(session__meeting__number=72,session__group__acronym='mars',schedule__name='test-schedule')) # pyflakes:ignore
-
-        self.login()
-        url = self.absreverse('ietf.meeting.views.edit_meeting_schedule',kwargs=dict(num='72',name='test-schedule',owner='plain@example.com'))
-        self.driver.get(url)
-
-        # driver.get() will wait for scripts to finish, but not ajax
-        # requests.  Wait for completion of the permissions check:
-        read_only_note = self.driver.find_element(By.ID, 'read_only')
-        WebDriverWait(self.driver, 10).until(expected_conditions.invisibility_of_element(read_only_note), "Read-only schedule")
-
-        s1 = Session.objects.filter(group__acronym='mars', meeting=meeting).first()
-        selector = "#session_{}".format(s1.pk)
-        WebDriverWait(self.driver, 30).until(expected_conditions.presence_of_element_located((By.CSS_SELECTOR, selector)), "Did not find %s"%selector)
-
-        self.assertEqual(self.driver.find_elements(By.CSS_SELECTOR, "#sortable-list #session_{}".format(s1.pk)), [])
-
-        element = self.driver.find_element(By.ID, 'session_{}'.format(s1.pk))
-        target  = self.driver.find_element(By.ID, 'sortable-list')
-        ActionChains(self.driver).drag_and_drop(element,target).perform()
-
-        self.assertTrue(self.driver.find_elements(By.CSS_SELECTOR, "#sortable-list #session_{}".format(s1.pk)))
-
-        time.sleep(0.1) # The API that modifies the database runs async
-
-        self.assertEqual(SchedTimeSessAssignment.objects.filter(session__meeting__number=72,session__group__acronym='mars',schedule__name='test-schedule').count(),0)
 
 @ifSeleniumEnabled
 class SlideReorderTests(IetfSeleniumTestCase):
@@ -1076,9 +1038,9 @@ class InterimTests(IetfSeleniumTestCase):
                     unexpected.add(entry.text)
             advance_month()
 
-        self.assertEqual(seen, visible_meetings, "Expected calendar entries not shown.")
-        self.assertEqual(not_visible, set(), "Hidden calendar entries for expected interim meetings.")
-        self.assertEqual(unexpected, set(), "Unexpected calendar entries visible")
+        self.assertCountEqual(seen, visible_meetings, "Expected calendar entries not shown.")
+        self.assertCountEqual(not_visible, set(), "Hidden calendar entries for expected interim meetings.")
+        self.assertCountEqual(unexpected, set(), "Unexpected calendar entries visible")
 
     def do_upcoming_view_filter_test(self, querystring, visible_meetings=()):
         self.login()
@@ -1152,102 +1114,85 @@ class InterimTests(IetfSeleniumTestCase):
         ietf_meetings = set(self.all_ietf_meetings())
         self.do_upcoming_view_filter_test('', ietf_meetings.union(self.displayed_interims()))
 
+    def test_upcoming_view_show_ietf_meetings(self):
+        self.do_upcoming_view_filter_test('?show=ietf-meetings', self.all_ietf_meetings())
+
     def test_upcoming_view_filter_show_group(self):
         # Show none
-        ietf_meetings = set(self.all_ietf_meetings())
-        self.do_upcoming_view_filter_test('?show=', ietf_meetings)
+        self.do_upcoming_view_filter_test('?show=')
 
         # Show one
-        self.do_upcoming_view_filter_test('?show=mars', 
-                                          ietf_meetings.union(
-                                              self.displayed_interims(groups=['mars'])
-                                          ))
+        self.do_upcoming_view_filter_test('?show=mars', self.displayed_interims(groups=['mars']))
 
         # Show two
-        self.do_upcoming_view_filter_test('?show=mars,ames', 
-                                          ietf_meetings.union(
-                                              self.displayed_interims(groups=['mars', 'ames'])
-                                          ))
+        self.do_upcoming_view_filter_test('?show=mars,ames',self.displayed_interims(groups=['mars', 'ames']))
+
+        # Show two plus ietf-meetings
+        self.do_upcoming_view_filter_test(
+            '?show=ietf-meetings,mars,ames',
+            set(self.all_ietf_meetings()).union(self.displayed_interims(groups=['mars', 'ames']))
+        )
 
     def test_upcoming_view_filter_show_area(self):
         mars = Group.objects.get(acronym='mars')
         area = mars.parent
-        ietf_meetings = set(self.all_ietf_meetings())
-        self.do_upcoming_view_filter_test('?show=%s' % area.acronym,
-                                          ietf_meetings.union(
-                                              self.displayed_interims(groups=['mars', 'ames'])
-                                          ))
+        self.do_upcoming_view_filter_test('?show=%s' % area.acronym, self.displayed_interims(groups=['mars', 'ames']))
 
     def test_upcoming_view_filter_show_type(self):
-        ietf_meetings = set(self.all_ietf_meetings())
-        self.do_upcoming_view_filter_test('?show=plenary',
-                                          ietf_meetings.union(
-                                              self.displayed_interims(groups=['sg'])
-                                          ))
+        self.do_upcoming_view_filter_test('?show=plenary', self.displayed_interims(groups=['sg']))
 
     def test_upcoming_view_filter_hide_group(self):
         mars = Group.objects.get(acronym='mars')
         area = mars.parent
 
         # Without anything shown, should see only ietf meetings
-        ietf_meetings = set(self.all_ietf_meetings())
-        self.do_upcoming_view_filter_test('?hide=mars', ietf_meetings)
+        self.do_upcoming_view_filter_test('?hide=mars')
 
         # With group shown
-        self.do_upcoming_view_filter_test('?show=ames,mars&hide=mars',
-                                          ietf_meetings.union(
-                                              self.displayed_interims(groups=['ames'])
-                                          ))
+        self.do_upcoming_view_filter_test('?show=ames,mars&hide=mars', self.displayed_interims(groups=['ames']))
         # With area shown
-        self.do_upcoming_view_filter_test('?show=%s&hide=mars' % area.acronym, 
-                                          ietf_meetings.union(
-                                              self.displayed_interims(groups=['ames'])
-                                          ))
-
+        self.do_upcoming_view_filter_test('?show=%s&hide=mars' % area.acronym, self.displayed_interims(groups=['ames']))
         # With type shown
-        self.do_upcoming_view_filter_test('?show=plenary&hide=sg',
-                                          ietf_meetings)
+        self.do_upcoming_view_filter_test('?show=plenary&hide=sg')
 
     def test_upcoming_view_filter_hide_area(self):
         mars = Group.objects.get(acronym='mars')
         area = mars.parent
 
-        # Without anything shown, should see only ietf meetings
-        ietf_meetings = set(self.all_ietf_meetings())
-        self.do_upcoming_view_filter_test('?hide=%s' % area.acronym, ietf_meetings)
+        # Without anything shown, should see nothing
+        self.do_upcoming_view_filter_test('?hide=%s' % area.acronym)
 
         # With area shown
-        self.do_upcoming_view_filter_test('?show=%s&hide=%s' % (area.acronym, area.acronym),
-                                          ietf_meetings)
+        self.do_upcoming_view_filter_test('?show=%s&hide=%s' % (area.acronym, area.acronym))
 
         # With group shown
-        self.do_upcoming_view_filter_test('?show=mars&hide=%s' % area.acronym, ietf_meetings)
+        self.do_upcoming_view_filter_test('?show=mars&hide=%s' % area.acronym)
 
         # With type shown
-        self.do_upcoming_view_filter_test('?show=regular&hide=%s' % area.acronym, ietf_meetings)
+        self.do_upcoming_view_filter_test('?show=regular&hide=%s' % area.acronym)
+
+        # with IETF meetings shown
+        self.do_upcoming_view_filter_test('?show=ietf-meetings,hide=%s' % area.acronym, self.all_ietf_meetings())
 
     def test_upcoming_view_filter_hide_type(self):
-        mars = Group.objects.get(acronym='mars')
-        area = mars.parent
-
-        # Without anything shown, should see only ietf meetings
-        ietf_meetings = set(self.all_ietf_meetings())
-        self.do_upcoming_view_filter_test('?hide=regular', ietf_meetings)
+        # Without anything shown, should see nothing
+        self.do_upcoming_view_filter_test('?hide=regular')
 
         # With group shown
-        self.do_upcoming_view_filter_test('?show=mars&hide=regular', ietf_meetings)
+        self.do_upcoming_view_filter_test('?show=mars&hide=regular')
 
         # With type shown
-        self.do_upcoming_view_filter_test('?show=plenary,regular&hide=%s' % area.acronym, 
-                                          ietf_meetings.union(
-                                              self.displayed_interims(groups=['sg'])
-                                          ))
+        self.do_upcoming_view_filter_test(
+            '?show=plenary,regular&hide=regular',
+            self.displayed_interims(groups=['sg'])
+        )
+
+        # With interim-meetings shown
+        self.do_upcoming_view_filter_test('?show=plenary,regular&hide=regular', self.displayed_interims(groups=['sg']))
 
     def test_upcoming_view_filter_whitespace(self):
         """Whitespace in filter lists should be ignored"""
-        meetings = set(self.all_ietf_meetings())
-        meetings.update(self.displayed_interims(groups=['mars']))
-        self.do_upcoming_view_filter_test('?show=mars , ames &hide=   ames', meetings)
+        self.do_upcoming_view_filter_test('?show=mars , ames &hide=   ames', self.displayed_interims(groups=['mars']))
 
     def test_upcoming_view_time_zone_selection(self):
         def _assert_interim_tz_correct(sessions, tz):
@@ -1548,7 +1493,7 @@ class EditTimeslotsTests(IetfSeleniumTestCase):
     """Test the timeslot editor"""
     def setUp(self):
         super().setUp()
-        self.meeting: Meeting = MeetingFactory(
+        self.meeting: Meeting = MeetingFactory(  # type: ignore[annotation-unchecked]
             type_id='ietf',
             number=120,
             date=date_today() + datetime.timedelta(days=10),
@@ -1621,30 +1566,27 @@ class EditTimeslotsTests(IetfSeleniumTestCase):
         self.do_delete_timeslot_test(cancel=True)
 
     def do_delete_time_interval_test(self, cancel=False):
-        delete_day = self.meeting.date
-        delete_time = datetime.time(hour=10)
-        other_day = self.meeting.get_meeting_date(1)
-        other_time = datetime.time(hour=12)
+        delete_time_local = datetime_from_date(self.meeting.date, self.meeting.tz()).replace(hour=10)
+        delete_time = delete_time_local.astimezone(datetime.timezone.utc)
         duration = datetime.timedelta(minutes=60)
 
-        delete: [TimeSlot] = TimeSlotFactory.create_batch(
+        delete: [TimeSlot] = TimeSlotFactory.create_batch(  # type: ignore[annotation-unchecked]
             2,
             meeting=self.meeting,
-            time=datetime_from_date(delete_day, self.meeting.tz()).replace(hour=delete_time.hour),
+            time=delete_time_local,
             duration=duration,
         )
-
-        keep: [TimeSlot] = [
+        keep: [TimeSlot] = [  # type: ignore[annotation-unchecked]
             TimeSlotFactory(
                 meeting=self.meeting,
-                time=datetime_from_date(day, self.meeting.tz()).replace(hour=time.hour),
+                time=keep_time,
                 duration=duration
             )
-            for (day, time) in (
-                # combinations of day/time that should not be deleted
-                (delete_day, other_time),
-                (other_day, delete_time),
-                (other_day, other_time),
+            for keep_time in (
+                # same day, but 2 hours later
+                delete_time + datetime.timedelta(hours=2),
+                # next day, but same wall clock time
+                datetime_from_date(self.meeting.get_meeting_date(1), self.meeting.tz()).replace(hour=10),
             )
         ]
 
@@ -1652,13 +1594,9 @@ class EditTimeslotsTests(IetfSeleniumTestCase):
             '#timeslot-table '
             '.delete-button[data-delete-scope="column"]'
             '[data-col-id="{}T{}-{}"]'.format(
-                delete_day.isoformat(),
-                delete_time.strftime('%H:%M'),
-                self.meeting.tz().localize(
-                    datetime.datetime.combine(delete_day, delete_time) + duration
-                ).strftime(
-                    '%H:%M'
-                ))
+                delete_time_local.date().isoformat(),
+                delete_time_local.strftime('%H:%M'),
+                (delete_time + duration).astimezone(self.meeting.tz()).strftime('%H:%M'))
         )
         self.do_delete_test(selector, keep, delete, cancel)
 
@@ -1675,14 +1613,14 @@ class EditTimeslotsTests(IetfSeleniumTestCase):
         hours = [10, 12]
         other_days = [self.meeting.get_meeting_date(d) for d in range(1, 3)]
 
-        delete: [TimeSlot] = [
+        delete: [TimeSlot] = [  # type: ignore[annotation-unchecked]
             TimeSlotFactory(
                 meeting=self.meeting,
                 time=datetime_from_date(delete_day, self.meeting.tz()).replace(hour=hour),
             ) for hour in hours
         ]
 
-        keep: [TimeSlot] = [
+        keep: [TimeSlot] = [  # type: ignore[annotation-unchecked]
             TimeSlotFactory(
                 meeting=self.meeting,
                 time=datetime_from_date(day, self.meeting.tz()).replace(hour=hour),

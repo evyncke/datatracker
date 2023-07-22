@@ -3,8 +3,8 @@
 {% load origin ietf_filters static %}
 {% block title %}{{ meeting }} : {{ acronym }}{% endblock %}
 {% block morecss %}
-    .slides tr {
-    cursor:pointer;
+    .drag-handle {
+        cursor: move;
     }
 {% endblock %}
 {% block content %}
@@ -12,7 +12,7 @@
     <h1>
         {{ meeting }}
         <br>
-        <small class="text-muted">{{ acronym }}</small>
+        <small class="text-body-secondary">{{ acronym }}</small>
     </h1>
     {% if meeting.start_datetime >= thisweek %}
         <a class="regular float-end"
@@ -64,6 +64,7 @@
             var options = {
                 group: "slides",
                 animation: 150,
+                handle: ".drag-handle",
                 onAdd: function(event) {onAdd(event)},
                 onRemove: function(event) {onRemove(event)},
                 onEnd: function(event) {onEnd(event)}

@@ -34,7 +34,7 @@ class Command(BaseCommand):
             "        $ manage.py {name} --absolute --sections=url | grep False\n"
             "\n".format(**locals())
         )
-    args = "[[master_json] latest_json]"
+    args = "[[main_json] latest_json]"
 
     def create_parser(self, prog_name, subcommand):
         import argparse
@@ -73,18 +73,19 @@ class Command(BaseCommand):
             data = json.load(file)
         except ValueError as e:
             raise CommandError("Failure to read json data from %s: %s" % (filename, e))
+        file.close()
         version = version or data["version"]
         if not version in data:
             raise CommandError("There is no data for version %s available in %s" % (version, filename))
         return data[version], version
 
-    def coverage_diff(self, master, latest, sections, release=None, **options):
-        master_coverage, mversion = self.read_coverage(master, release)
+    def coverage_diff(self, main, latest, sections, release=None, **options):
+        main_coverage, mversion = self.read_coverage(main, release)
         latest_coverage, lversion = self.read_coverage(latest)
         self.stdout.write("\nShowing coverage differeces between %s and %s:\n" % (mversion, lversion))
         for section in sections:
-            mcoverage = master_coverage[section]["covered"]
-            mformat   = master_coverage[section].get("format", 1)
+            mcoverage = main_coverage[section]["covered"]
+            mformat   = main_coverage[section].get("format", 1)
             lcoverage = latest_coverage[section]["covered"]
             lformat   = latest_coverage[section].get("format", 1)
             #
@@ -235,7 +236,7 @@ class Command(BaseCommand):
             # verbosity = int(options.get('verbosity'))
             if not filenames:
                 filenames = [
-                    getattr(settings, 'TEST_COVERAGE_MASTER_FILE'),
+                    getattr(settings, 'TEST_COVERAGE_MAIN_FILE'),
                     getattr(settings, 'TEST_COVERAGE_LATEST_FILE'),
                 ]
             if len(filenames) != 2:

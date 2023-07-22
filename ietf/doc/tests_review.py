@@ -345,6 +345,16 @@ class ReviewTests(TestCase):
         self.assertIn("This team has completed other reviews", message)
         self.assertIn("{} -01 Serious Issues".format(reviewer_email.person.ascii), message)
 
+        # check events
+        assignment_events = assignment.reviewassignmentdocevent_set.all()
+        self.assertEqual(assignment_events.count(), 1)
+        e = assignment_events.first()
+        self.assertEqual(e.type, 'assigned_review_request')
+        self.assertIn('is assigned', e.desc)
+        self.assertEqual(e.doc, doc)
+        request_events = review_req.reviewrequestdocevent_set.all()
+        self.assertEqual(request_events.count(), 0)
+
     def test_previously_reviewed_replaced_doc(self):
         review_team = ReviewTeamFactory(acronym="reviewteam", name="Review Team", type_id="review", list_email="reviewteam@ietf.org", parent=Group.objects.get(acronym="farfut"))
         rev_role = RoleFactory(group=review_team,person__user__username='reviewer',person__user__email='reviewer@example.com',person__name='Some Reviewer',name_id='reviewer')
@@ -489,6 +499,8 @@ class ReviewTests(TestCase):
 
                 tar.add(os.path.relpath(tmp.name))
 
+                mbox.close()
+
         return mbox_path
 
     def test_search_mail_archive(self):
@@ -593,7 +605,7 @@ class ReviewTests(TestCase):
         for r in ReviewResultName.objects.filter(slug__in=("issues", "ready")):
             review_req.team.reviewteamsettings.review_results.add(r)
 
-        url = urlreverse('ietf.doc.views_review.complete_review', kwargs={ "name": doc.name, "assignment_id": review_req.pk })
+        url = urlreverse('ietf.doc.views_review.complete_review', kwargs={ "name": doc.name, "assignment_id": assignment.pk })
 
         return assignment, url
 

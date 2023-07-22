@@ -53,7 +53,9 @@ def showballoticon(doc):
     if doc.type_id == "draft":
         if doc.stream_id == 'ietf' and doc.get_state_slug("draft-iesg") not in IESG_BALLOT_ACTIVE_STATES:
             return False
-        elif doc.stream_id == 'irtf' and doc.get_state_slug("draft-stream-irtf") not in ['irsgpoll']:
+        elif doc.stream_id == 'irtf' and doc.get_state_slug("draft-stream-irtf") != "irsgpoll":
+            return False
+        elif doc.stream_id == 'editorial' and doc.get_state_slug("draft-stream-rsab") != "rsabpoll":
             return False
     elif doc.type_id == "charter":
         if doc.get_state_slug() not in ("intrev", "extrev", "iesgrev"):
@@ -105,8 +107,10 @@ def ballot_icon(context, doc):
             break
 
     typename = "Unknown"
-    if ballot.ballot_type.slug=='irsg-approve':
+    if ballot.ballot_type.slug == "irsg-approve":
         typename = "IRSG"
+    elif ballot.ballot_type.slug == "rsab-approve":
+        typename = "RSAB"
     else:
         typename = "IESG"
 
@@ -140,7 +144,7 @@ def ballot_icon(context, doc):
         i = i + 1
 
     res.append("</tr></tbody></table></a>")
-    res.append('<div id="modal-%d" class="modal fade" tabindex="-1" role="dialog" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable modal-xl"><div class="modal-content"></div></div></div>' % ballot.pk)
+    res.append('<div id="modal-%d" class="modal fade" tabindex="-1" role="dialog" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable modal-xl modal-fullscreen-lg-down"><div class="modal-content"></div></div></div>' % ballot.pk)
 
     return mark_safe("".join(res))
 
@@ -185,8 +189,7 @@ def state_age_colored(doc):
         except IndexError:
             state_datetime = datetime.datetime(1990, 1, 1, tzinfo=datetime.timezone.utc)
         days = (timezone.now() - state_datetime).days
-        # loosely based on
-        # https://trac.ietf.org/trac/iesg/wiki/PublishPath
+        # loosely based on the Publish Path page at the iesg wiki
         if iesg_state == "lc":
             goal1 = 30
             goal2 = 30

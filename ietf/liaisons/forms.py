@@ -9,16 +9,15 @@ import operator
 from typing import Union            # pyflakes:ignore
 
 from email.utils import parseaddr
-from form_utils.forms import BetterModelForm
 
 from django import forms
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
-from django.db.models.query import QuerySet
 from django.forms.utils import ErrorList
 from django.db.models import Q
 #from django.forms.widgets import RadioFieldRenderer
 from django.core.validators import validate_email
+from django_stubs_ext import QuerySetAny
 
 import debug                            # pyflakes:ignore
 
@@ -41,7 +40,7 @@ from functools import reduce
 NOTES:
 Authorized individuals are people (in our Person table) who are authorized to send
 messages on behalf of some other group - they have a formal role in the other group,
-whereas the liasion manager has a formal role with the IETF (or more correctly,
+whereas the liaison manager has a formal role with the IETF (or more correctly,
 with the IAB).
 '''
 
@@ -132,7 +131,7 @@ class AddCommentForm(forms.Form):
 #     def render(self):
 #         output = []
 #         for widget in self:
-#             output.append(format_html(force_text(widget)))
+#             output.append(format_html(force_str(widget)))
 #         return mark_safe('\n'.join(output))
 
 
@@ -204,7 +203,7 @@ class SearchLiaisonForm(forms.Form):
 class CustomModelMultipleChoiceField(forms.ModelMultipleChoiceField):
     '''If value is a QuerySet, return it as is (for use in widget.render)'''
     def prepare_value(self, value):
-        if isinstance(value, QuerySet):
+        if isinstance(value, QuerySetAny):
             return value
         if (hasattr(value, '__iter__') and
                 not isinstance(value, str) and
@@ -213,7 +212,7 @@ class CustomModelMultipleChoiceField(forms.ModelMultipleChoiceField):
         return super(CustomModelMultipleChoiceField, self).prepare_value(value)
 
 
-class LiaisonModelForm(BetterModelForm):
+class LiaisonModelForm(forms.ModelForm):
     '''Specify fields which require a custom widget or that are not part of the model.
     '''
     from_groups = forms.ModelMultipleChoiceField(queryset=Group.objects.all(),label='Groups',required=False)
@@ -238,13 +237,6 @@ class LiaisonModelForm(BetterModelForm):
     class Meta:
         model = LiaisonStatement
         exclude = ('attachments','state','from_name','to_name')
-        fieldsets = [('From', {'fields': ['from_groups','from_contact', 'response_contacts'], 'legend': ''}),
-                     ('To', {'fields': ['to_groups','to_contacts'], 'legend': ''}),
-                     ('Other email addresses', {'fields': ['technical_contacts','action_holder_contacts','cc_contacts'], 'legend': ''}),
-                     ('Purpose', {'fields':['purpose', 'deadline'], 'legend': ''}),
-                     ('Reference', {'fields': ['other_identifiers','related_to'], 'legend': ''}),
-                     ('Liaison Statement', {'fields': ['title', 'submitted_date', 'body', 'attachments'], 'legend': ''}),
-                     ('Add attachment', {'fields': ['attach_title', 'attach_file', 'attach_button'], 'legend': ''})]
 
     def __init__(self, user, *args, **kwargs):
         super(LiaisonModelForm, self).__init__(*args, **kwargs)
@@ -471,20 +463,11 @@ class IncomingLiaisonForm(LiaisonModelForm):
 
 
 class OutgoingLiaisonForm(LiaisonModelForm):
-    from_contact = SearchableEmailField(only_users=True)
     approved = forms.BooleanField(label="Obtained prior approval", required=False)
 
     class Meta:
         model = LiaisonStatement
         exclude = ('attachments','state','from_name','to_name','action_holder_contacts')
-        # add approved field, no action_holder_contacts
-        fieldsets = [('From', {'fields': ['from_groups','from_contact','response_contacts','approved'], 'legend': ''}),
-                     ('To', {'fields': ['to_groups','to_contacts'], 'legend': ''}),
-                     ('Other email addresses', {'fields': ['technical_contacts','cc_contacts'], 'legend': ''}),
-                     ('Purpose', {'fields':['purpose', 'deadline'], 'legend': ''}),
-                     ('Reference', {'fields': ['other_identifiers','related_to'], 'legend': ''}),
-                     ('Liaison Statement', {'fields': ['title', 'submitted_date', 'body', 'attachments'], 'legend': ''}),
-                     ('Add attachment', {'fields': ['attach_title', 'attach_file', 'attach_button'], 'legend': ''})]
 
     def is_approved(self):
         return self.cleaned_data['approved']
@@ -501,6 +484,7 @@ class OutgoingLiaisonForm(LiaisonModelForm):
             self.fields['from_groups'].initial = [flat_choices[0][0]]
         
         if has_role(self.user, "Secretariat"):
+            self.fields['from_contact'] = SearchableEmailField(only_users=True)  # secretariat can edit this field!
             return
 
         if self.person.role_set.filter(name='liaiman',group__state='active'):
@@ -509,8 +493,10 @@ class OutgoingLiaisonForm(LiaisonModelForm):
             email = self.person.role_set.filter(name__in=('ad','chair'),group__state='active').first().email.address
         else:
             email = self.person.email_address()
+
+        # Non-secretariat user cannot change the from_contact field. Fill in its value.
+        self.fields['from_contact'].disabled = True
         self.fields['from_contact'].initial = email
-        self.fields['from_contact'].widget.attrs['readonly'] = True
 
     def set_to_fields(self):
         '''Set to_groups and to_contacts options and initial value based on user

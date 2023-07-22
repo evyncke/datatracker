@@ -11,14 +11,14 @@
         {% if user.is_authenticated %}
             <a href="{% url "ietf.community.views.untrack_document" username=request.user.username name=doc.name %}"
                class="track-untrack-doc {% if not doc.tracked_in_personal_community_list %}d-none{% endif %}"
-               aria-label="Remove from your personal ID list"
-               title="Remove from your personal ID list">
+               aria-label="Remove from your personal I-D list"
+               title="Remove from your personal I-D list">
                 <i class="bi bi-bookmark-check-fill"></i>
             </a>
             <a href="{% url "ietf.community.views.track_document" username=request.user.username name=doc.name %}"
                class="track-untrack-doc {% if doc.tracked_in_personal_community_list %}d-none{% endif %}"
-               aria-label="Add to your personal ID list"
-               title="Add to your personal ID list">
+               aria-label="Add to your personal I-D list"
+               title="Add to your personal I-D list">
                 <i class="bi bi-bookmark"></i>
             </a>
             <br>
@@ -46,7 +46,7 @@
         {% endfor %}
     </td>
     <td class="doc">
-        {% if doc.pages %}<small class="float-end text-muted d-none d-sm-block">{{ doc.pages }} page{{ doc.pages|pluralize }}</small>{% endif %}
+        {% if doc.pages %}<small class="float-end text-body-secondary d-none d-sm-block">{{ doc.pages }} page{{ doc.pages|pluralize }}</small>{% endif %}
         <div>
             <a href="{{ doc.get_absolute_url }}">
                 {% if doc.get_state_slug == "rfc" %}
@@ -55,7 +55,7 @@
                     {{ doc.name }}-{{ doc.rev }}
                 {% endif %}
             </a>
-            {% if doc.get_state_slug == "rfc" and "draft" in doc.name %}<i class="text-muted">(was {{ doc.name }})</i>{% endif %}
+            {% if doc.get_state_slug == "rfc" and "draft" in doc.name %}<i class="text-body-secondary">(was {{ doc.name }})</i>{% endif %}
             <br>
             {% comment %}
             <div class="float-end">
@@ -147,7 +147,7 @@
                     {% endif %}
                     <br>
                     {% if doc.shepherd %}
-                        {% email_person_link doc.shepherd title="Shepherd" class="small text-muted" %}
+                        {% email_person_link doc.shepherd title="Shepherd" class="small text-body-secondary" %}
                     {% endif %}
                 </td>
             {% endif %}

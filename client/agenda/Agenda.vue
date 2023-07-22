@@ -9,7 +9,7 @@
       span.meeting-warning(v-if='agendaStore.meeting.warningNote') {{agendaStore.meeting.warningNote}}
   h4
     span {{agendaStore.meeting.city}}, {{ meetingDate }}
-    h6.float-end.d-none.d-lg-inline(v-if='meetingUpdated') #[span.text-muted Updated:] {{ meetingUpdated }}
+    h6.float-end.d-none.d-lg-inline(v-if='meetingUpdated') #[span.text-body-secondary Updated:] {{ meetingUpdated }}
 
   .agenda-topnav.my-3
     meeting-navigation
@@ -49,7 +49,7 @@
           n-popover(v-if='!agendaStore.infoNoteShown')
             template(#trigger)
               n-button.ms-2(text, @click='toggleInfoNote')
-                i.bi.bi-info-circle.text-muted
+                i.bi.bi-info-circle.text-body-secondary
             span Show Info Note
         .col-12.col-sm-auto.d-flex.align-items-center
           i.bi.bi-globe.me-2
@@ -317,7 +317,14 @@ const meetingDate = computed(() => {
   }
 })
 const meetingUpdated = computed(() => {
-  return agendaStore.meeting.updated ? DateTime.fromISO(agendaStore.meeting.updated).setZone(agendaStore.timezone).toFormat(`DD 'at' tt ZZZZ`) : false
+  if (!agendaStore.meeting.updated) { return false }
+  
+  const updatedDatetime = DateTime.fromISO(agendaStore.meeting.updated).setZone(agendaStore.timezone)
+  if (!updatedDatetime.isValid || updatedDatetime < DateTime.fromISO('1980-01-01')) {
+    return false
+  }
+  
+  return updatedDatetime.toFormat(`DD 'at' T ZZZZ`)
 })
 const colorLegendShown = computed(() => {
   return agendaStore.colorPickerVisible || (agendaStore.colorLegendShown && Object.keys(agendaStore.colorAssignments).length > 0)
