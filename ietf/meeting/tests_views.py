@@ -648,6 +648,20 @@ class MeetingTests(BaseMeetingTestCase):
             self.assertFalse(row.find("a:contains(\"Bad Slideshow\")"))
 
             # test with no meeting number in url
+            # Add various group sessions
+            groups = []
+            parent_groups = [
+                    GroupFactory.create(type_id="area", acronym="gen"),
+                    GroupFactory.create(acronym="iab"),
+                    GroupFactory.create(acronym="irtf"),
+                    ]
+            for parent in parent_groups:
+                groups.append(GroupFactory.create(parent=parent))
+            for acronym in ["rsab", "edu"]:
+                groups.append(GroupFactory.create(acronym=acronym))
+            for group in groups:
+                SessionFactory(meeting=meeting, group=group)
+            self.write_materials_files(meeting, session)
             url = urlreverse("ietf.meeting.views.materials", kwargs=dict())
             r = self.client.get(url)
             self.assertEqual(r.status_code, 200)
@@ -657,6 +671,10 @@ class MeetingTests(BaseMeetingTestCase):
             self.assertTrue(row.find('a:contains("Minutes")'))
             self.assertTrue(row.find('a:contains("Slideshow")'))
             self.assertFalse(row.find("a:contains(\"Bad Slideshow\")"))
+            # test for different sections
+            sections = ["plenaries", "gen", "iab", "editorial", "irtf", "training"]
+            for section in sections:
+                self.assertEqual(len(q(f"#{section}")), 1, f"{section} section should exists in proceedings")
 
             # test with a loggged-in wg chair
             self.client.login(username="marschairman", password="marschairman+password")
@@ -6376,6 +6394,7 @@ class MaterialsTests(TestCase):
         self.assertIsNone(submission.doc)
         r = self.client.get(url)
         self.assertEqual(r.status_code,200)
+        empty_outbox()
         r = self.client.post(url,dict(title='different title',approve='approve'))
         self.assertEqual(r.status_code,302)
         self.assertEqual(SlideSubmission.objects.filter(status__slug = 'pending').count(), 0)
@@ -6388,6 +6407,9 @@ class MaterialsTests(TestCase):
         r = self.client.get(url)
         self.assertEqual(r.status_code, 200)
         self.assertRegex(r.content.decode(), r"These\s+slides\s+have\s+already\s+been\s+approved")
+        self.assertEqual(len(outbox), 1)
+        self.assertIn(submission.submitter.email_address(), outbox[0]['To'])
+        self.assertIn('Slides approved', outbox[0]['Subject'])
 
     def test_approve_proposed_slides_multisession_apply_one(self):
         submission = SlideSubmissionFactory(session__meeting__type_id='ietf')
@@ -7632,6 +7654,13 @@ class ProceedingsTests(BaseMeetingTestCase):
             'Correct title and link for each ProceedingsMaterial should appear in the correct order'
         )
 
+    def _assertGroupSessions(self, response, meeting):
+        """Checks that group/sessions are present"""
+        pq = PyQuery(response.content)
+        sections = ["plenaries", "gen", "iab", "editorial", "irtf", "training"]
+        for section in sections:
+            self.assertEqual(len(pq(f"#{section}")), 1, f"{section} section should exists in proceedings")
+
     def test_proceedings(self):
         """Proceedings should be displayed correctly
 
@@ -7644,6 +7673,20 @@ class ProceedingsTests(BaseMeetingTestCase):
         GroupEventFactory(group=session.group,type='status_update')
         SessionPresentationFactory(document__type_id='recording',session=session)
         SessionPresentationFactory(document__type_id='recording',session=session,document__title="Audio recording for tests")
+
+        # Add various group sessions
+        groups = []
+        parent_groups = [
+                GroupFactory.create(type_id="area", acronym="gen"),
+                GroupFactory.create(acronym="iab"),
+                GroupFactory.create(acronym="irtf"),
+                ]
+        for parent in parent_groups:
+            groups.append(GroupFactory.create(parent=parent))
+        for acronym in ["rsab", "edu"]:
+            groups.append(GroupFactory.create(acronym=acronym))
+        for group in groups:
+            SessionFactory(meeting=meeting, group=group)
 
         self.write_materials_files(meeting, session)
         self._create_proceedings_materials(meeting)
@@ -7691,6 +7734,7 @@ class ProceedingsTests(BaseMeetingTestCase):
         # configurable contents
         self._assertMeetingHostsDisplayed(r, meeting)
         self._assertProceedingsMaterialsDisplayed(r, meeting)
+        self._assertGroupSessions(r, meeting)
 
     def test_named_session(self):
         """Session with a name should appear separately in the proceedings"""

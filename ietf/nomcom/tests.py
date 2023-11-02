@@ -1327,6 +1327,36 @@ class InactiveNomcomTests(TestCase):
         q = PyQuery(response.content)
         self.assertIn('not active', q('.alert-warning').text() )
 
+    def test_filter_nominees(self):
+        url = reverse(
+            "ietf.nomcom.views.private_index", kwargs={"year": self.nc.year()}
+        )
+        login_testing_unauthorized(self, self.chair.user.username, url)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+
+        states = list(NomineePositionStateName.objects.values_list("slug", flat=True))
+        states += ["not-declined", "questionnaire"]
+        for state in states:
+            response = self.client.get(url, {"state": state})
+            self.assertEqual(response.status_code, 200)
+            q = PyQuery(response.content)
+            nps = []
+            if state == "not-declined":
+                nps = NomineePosition.objects.exclude(state__slug="declined")
+            elif state == "questionnaire":
+                nps = [
+                    np
+                    for np in NomineePosition.objects.not_duplicated()
+                    if np.questionnaires
+                ]
+            else:
+                nps = NomineePosition.objects.filter(state__slug=state)
+            # nomination state is in third table column
+            self.assertEqual(
+                len(nps), len(q("#nominee-position-table td:nth-child(3)"))
+            )
+
     def test_email_pasting_closed(self):
         url = reverse('ietf.nomcom.views.private_feedback_email', kwargs={'year':self.nc.year()})
         login_testing_unauthorized(self, self.chair.user.username, url)
@@ -1450,7 +1480,7 @@ class FeedbackIndexTests(TestCase):
         self.assertEqual(response.status_code,200)
         q = PyQuery(response.content)
         r = q('tfoot').eq(0).find('td').contents()
-        self.assertEqual([a.strip() for a in r], ['1', '1', '1'])
+        self.assertEqual([a.strip() for a in r], ['1', '1', '1', '0'])
 
 class FeedbackLastSeenTests(TestCase):
 
@@ -1485,7 +1515,7 @@ class FeedbackLastSeenTests(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code,200)
         q = PyQuery(response.content)
-        self.assertEqual( len(q('.bg-success')), 4 )
+        self.assertEqual( len(q('.text-bg-success')), 4 )
 
         f = self.nc.feedback_set.first()
         f.time = self.hour_ago
@@ -1495,20 +1525,20 @@ class FeedbackLastSeenTests(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code,200)
         q = PyQuery(response.content)
-        self.assertEqual( len(q('.bg-success')), 3 )
+        self.assertEqual( len(q('.text-bg-success')), 3 )
 
         FeedbackLastSeen.objects.update(time=self.second_from_now)
         response = self.client.get(url)
         self.assertEqual(response.status_code,200)
         q = PyQuery(response.content)
-        self.assertEqual( len(q('.bg-success')), 1 )
+        self.assertEqual( len(q('.text-bg-success')), 1 )
 
         TopicFeedbackLastSeen.objects.create(reviewer=self.member,topic=self.topic)
         TopicFeedbackLastSeen.objects.update(time=self.second_from_now)
         response = self.client.get(url)
         self.assertEqual(response.status_code,200)
         q = PyQuery(response.content)
-        self.assertEqual( len(q('.bg-success')), 0 )
+        self.assertEqual( len(q('.text-bg-success')), 0 )
 
     def test_feedback_nominee_badges(self):
         url = reverse('ietf.nomcom.views.view_feedback_nominee', kwargs={'year':self.nc.year(), 'nominee_id':self.nominee.id})
@@ -1517,7 +1547,7 @@ class FeedbackLastSeenTests(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code,200)
         q = PyQuery(response.content)
-        self.assertEqual( len(q('.bg-success')), 3 )
+        self.assertEqual( len(q('.text-bg-success')), 3 )
 
         f = self.nc.feedback_set.first()
         f.time = self.hour_ago
@@ -1527,13 +1557,13 @@ class FeedbackLastSeenTests(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code,200)
         q = PyQuery(response.content)
-        self.assertEqual( len(q('.bg-success')), 2 )
+        self.assertEqual( len(q('.text-bg-success')), 2 )
 
         FeedbackLastSeen.objects.update(time=self.second_from_now)
         response = self.client.get(url)
         self.assertEqual(response.status_code,200)
         q = PyQuery(response.content)
-        self.assertEqual( len(q('.bg-success')), 0 )
+        self.assertEqual( len(q('.text-bg-success')), 0 )
 
     def test_feedback_topic_badges(self):
         url = reverse('ietf.nomcom.views.view_feedback_topic', kwargs={'year':self.nc.year(), 'topic_id':self.topic.id})
@@ -1542,7 +1572,7 @@ class FeedbackLastSeenTests(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code,200)
         q = PyQuery(response.content)
-        self.assertEqual( len(q('.bg-success')), 1 )
+        self.assertEqual( len(q('.text-bg-success')), 1 )
 
         f = self.topic.feedback_set.first()
         f.time = self.hour_ago
@@ -1552,13 +1582,13 @@ class FeedbackLastSeenTests(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code,200)
         q = PyQuery(response.content)
-        self.assertEqual( len(q('.bg-success')), 0 )
+        self.assertEqual( len(q('.text-bg-success')), 0 )
 
         TopicFeedbackLastSeen.objects.update(time=self.second_from_now)
         response = self.client.get(url)
         self.assertEqual(response.status_code,200)
         q = PyQuery(response.content)
-        self.assertEqual( len(q('.bg-success')), 0 )
+        self.assertEqual( len(q('.text-bg-success')), 0 )
 
 class NewActiveNomComTests(TestCase):
 
@@ -2389,6 +2419,7 @@ class rfc8713EligibilityTests(TestCase):
         self.eligible_people = list()
         self.ineligible_people = list()
 
+        # Section 4.14 qualification criteria
         for combo_len in range(0,6):
             for combo in combinations(meetings,combo_len):
                 p = PersonFactory()
@@ -2398,6 +2429,18 @@ class rfc8713EligibilityTests(TestCase):
                     self.ineligible_people.append(p)
                 else:
                     self.eligible_people.append(p)
+
+        # Section 4.15 disqualification criteria
+        def ineligible_person_with_role(**kwargs):
+            p = RoleFactory(**kwargs).person
+            for m in meetings:
+                MeetingRegistrationFactory(person=p, meeting=m, attended=True)
+            self.ineligible_people.append(p)
+        for group in ['isocbot', 'ietf-trust', 'llc-board', 'iab']:
+            for role in ['member', 'chair']:
+                ineligible_person_with_role(group__acronym=group, name_id=role)
+        ineligible_person_with_role(group__type_id='area', group__state_id='active',name_id='ad')
+        ineligible_person_with_role(group=self.nomcom.group, name_id='chair')
 
         # No-one is eligible for the other_nomcom
         self.other_nomcom = NomComFactory(group__acronym='nomcom2018',first_call_for_volunteers=datetime.date(2018,5,1))
@@ -2863,3 +2906,113 @@ class VolunteerDecoratorUnitTests(TestCase):
                 self.assertEqual(v.qualifications,'path_2')
             if v.person == author_person:
                 self.assertEqual(v.qualifications,'path_3')
+
+class ReclassifyFeedbackTests(TestCase):
+    """Tests for feedback reclassification"""
+
+    def setUp(self):
+        super().setUp()
+        setup_test_public_keys_dir(self)
+        self.nc = NomComFactory.create(**nomcom_kwargs_for_year())
+        self.chair = self.nc.group.role_set.filter(name='chair').first().person
+        self.member = self.nc.group.role_set.filter(name='member').first().person
+        self.nominee = self.nc.nominee_set.order_by('pk').first()
+        self.position = self.nc.position_set.first()
+        self.topic = self.nc.topic_set.first()
+
+    def tearDown(self):
+        teardown_test_public_keys_dir(self)
+        super().tearDown()
+
+    def test_download_feedback_nominee(self):
+        # not really a reclassification test, but in closely adjacent code
+        fb = FeedbackFactory.create(nomcom=self.nc,type_id='questio')
+        fb.positions.add(self.position)
+        fb.nominees.add(self.nominee)
+        fb.save()
+        self.assertEqual(Feedback.objects.questionnaires().count(), 1)
+
+        url = reverse('ietf.nomcom.views.view_feedback_nominee', kwargs={'year':self.nc.year(), 'nominee_id':self.nominee.id})
+        login_testing_unauthorized(self,self.member.user.username,url)
+        provide_private_key_to_test_client(self)
+        response = self.client.post(url, {'feedback_id': fb.id, 'submit': 'download'})
+        self.assertEqual(response.status_code, 403)
+
+        self.client.logout()
+        self.client.login(username=self.chair.user.username, password=self.chair.user.username + "+password")
+        provide_private_key_to_test_client(self)
+
+        response = self.client.post(url, {'feedback_id': fb.id, 'submit': 'download'})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('questionnaire-', response['Content-Disposition'])
+
+    def test_reclassify_feedback_nominee(self):
+        fb = FeedbackFactory.create(nomcom=self.nc,type_id='comment')
+        fb.positions.add(self.position)
+        fb.nominees.add(self.nominee)
+        fb.save()
+        self.assertEqual(Feedback.objects.comments().count(), 1)
+
+        url = reverse('ietf.nomcom.views.view_feedback_nominee', kwargs={'year':self.nc.year(), 'nominee_id':self.nominee.id})
+        login_testing_unauthorized(self,self.member.user.username,url)
+        provide_private_key_to_test_client(self)
+        response = self.client.post(url, {'feedback_id': fb.id, 'type': 'obe', 'submit': 'reclassify'})
+        self.assertEqual(response.status_code, 403)
+
+        self.client.logout()
+        self.client.login(username=self.chair.user.username, password=self.chair.user.username + "+password")
+        provide_private_key_to_test_client(self)
+
+        response = self.client.post(url, {'feedback_id': fb.id, 'type': 'obe', 'submit': 'reclassify'})
+        self.assertEqual(response.status_code, 200)
+
+        fb = Feedback.objects.get(id=fb.id)
+        self.assertEqual(fb.type_id,'obe')
+        self.assertEqual(Feedback.objects.comments().count(), 0)
+        self.assertEqual(Feedback.objects.filter(type='obe').count(), 1)
+
+    def test_reclassify_feedback_topic(self):
+        fb = FeedbackFactory.create(nomcom=self.nc,type_id='comment')
+        fb.topics.add(self.topic)
+        fb.save()
+        self.assertEqual(Feedback.objects.comments().count(), 1)
+
+        url = reverse('ietf.nomcom.views.view_feedback_topic', kwargs={'year':self.nc.year(), 'topic_id':self.topic.id})
+        login_testing_unauthorized(self,self.member.user.username,url)
+        provide_private_key_to_test_client(self)
+        response = self.client.post(url, {'feedback_id': fb.id, 'type': 'unclassified'})
+        self.assertEqual(response.status_code, 403)
+
+        self.client.logout()
+        self.client.login(username=self.chair.user.username, password=self.chair.user.username + "+password")
+        provide_private_key_to_test_client(self)
+
+        response = self.client.post(url, {'feedback_id': fb.id, 'type': 'unclassified'})
+        self.assertEqual(response.status_code, 200)
+
+        fb = Feedback.objects.get(id=fb.id)
+        self.assertEqual(fb.type_id,None)
+        self.assertEqual(Feedback.objects.comments().count(), 0)
+        self.assertEqual(Feedback.objects.filter(type=None).count(), 1)
+
+    def test_reclassify_feedback_unrelated(self):
+        fb = FeedbackFactory(nomcom=self.nc, type_id='read')
+        self.assertEqual(Feedback.objects.filter(type='read').count(), 1)
+
+        url = reverse('ietf.nomcom.views.view_feedback_unrelated', kwargs={'year':self.nc.year()})
+        login_testing_unauthorized(self,self.member.user.username,url)
+        provide_private_key_to_test_client(self)
+        response = self.client.post(url, {'feedback_id': fb.id, 'type': 'junk'})
+        self.assertEqual(response.status_code, 403)
+
+        self.client.logout()
+        self.client.login(username=self.chair.user.username, password=self.chair.user.username + "+password")
+        provide_private_key_to_test_client(self)
+
+        response = self.client.post(url, {'feedback_id': fb.id, 'type': 'junk'})
+        self.assertEqual(response.status_code, 200)
+
+        fb = Feedback.objects.get(id=fb.id)
+        self.assertEqual(fb.type_id, 'junk')
+        self.assertEqual(Feedback.objects.filter(type='read').count(), 0)
+        self.assertEqual(Feedback.objects.filter(type='junk').count(), 1)

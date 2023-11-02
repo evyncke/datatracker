@@ -1,4 +1,4 @@
-# Copyright The IETF Trust 2013-2020, All Rights Reserved
+# Copyright The IETF Trust 2013-2023, All Rights Reserved
 
 from django.conf import settings
 from django.urls import include
@@ -47,6 +47,12 @@ info_detail_urls = [
     url(r'^secretarysettings/$', views.change_review_secretary_settings),
     url(r'^reset_next_reviewer/$', views.reset_next_reviewer),
     url(r'^email-aliases/$', RedirectView.as_view(pattern_name=views.email,permanent=False),name='ietf.group.urls_info_details.redirect.email'),
+    url(r'^statements/$', views.statements),
+    url(r'^appeals/$', views.appeals),
+    url(r'^appeals/artifact/(?P<artifact_id>\d+)$', views.appeal_artifact),
+    url(r'^appeals/artifact/(?P<artifact_id>\d+)/markdown$', views.appeal_artifact_markdown),
+
+
 ]
 
 
