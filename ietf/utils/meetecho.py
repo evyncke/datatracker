@@ -115,6 +115,7 @@ class MeetechoAPI:
     def schedule_meeting(
         self,
         wg_token: str,
+        room_id: int,
         description: str,
         start_time: datetime.datetime,
         duration: datetime.timedelta,
@@ -139,6 +140,7 @@ class MeetechoAPI:
           }
 
         :param wg_token: token retrieved via retrieve_wg_tokens()
+        :param room_id: int id to identify the room (will be echoed as room.id) 
         :param description: str describing the meeting
         :param start_time: starting time as a datetime
         :param duration: duration as a timedelta
@@ -151,6 +153,7 @@ class MeetechoAPI:
                 "meeting/interim/createRoom",
                 api_token=wg_token,
                 json={
+                    "room_id": room_id,
                     "description": description,
                     "start_time": self._serialize_time(start_time),
                     "duration": self._serialize_duration(duration),
@@ -455,9 +458,10 @@ class ConferenceManager(Manager):
         response = self.api.fetch_meetings(self.wg_token(group))
         return Conference.from_api_dict(self, response["rooms"])
 
-    def create(self, group, description, start_time, duration, extrainfo=""):
+    def create(self, group, session_id, description, start_time, duration, extrainfo=""):
         response = self.api.schedule_meeting(
             wg_token=self.wg_token(group),
+            room_id=int(session_id),
             description=description,
             start_time=start_time,
             duration=duration,
@@ -477,12 +481,10 @@ class ConferenceManager(Manager):
 class SlidesManager(Manager):
     """Interface between Datatracker models and Meetecho API
     
-    Note: The URL we send comes from get_versionless_href(). This should match what we use as the
-    URL in api_get_session_materials(). Additionally, it _must_ give the right result for a Document
-    instance that has not yet been persisted to the database. This is because upload_session_slides()
-    (as of 2024-03-07) SessionPresentations before saving its updated Documents. This means, for
-    example, using get_absolute_url() will cause bugs. (We should refactor upload_session_slides() to
-    avoid this requirement.) 
+    Note: the URL sent for a slide deck comes from DocumentInfo.get_href() and includes the revision
+    of the slides being sent. Be sure that 1) the URL matches what api_get_session_materials() returns
+    for the slides; and 2) the URL is valid if it is fetched immediately - possibly even before the call
+    to SlidesManager.add() or send_update() returns.
     """
 
     def __init__(self, api_config):
@@ -517,7 +519,7 @@ class SlidesManager(Manager):
             deck={
                 "id": slides.pk,
                 "title": slides.title,
-                "url": slides.get_versionless_href(),  # see above note re: get_versionless_href()
+                "url": slides.get_href(),
                 "rev": slides.rev,
                 "order": order,
             }
@@ -571,7 +573,7 @@ class SlidesManager(Manager):
                 {
                     "id": deck.document.pk,
                     "title": deck.document.title,
-                    "url": deck.document.get_versionless_href(),  # see note above re: get_versionless_href()
+                    "url": deck.document.get_href(),
                     "rev": deck.document.rev,
                     "order": deck.order,
                 }

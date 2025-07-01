@@ -13,7 +13,7 @@ import "bootstrap/js/dist/scrollspy";
 import "bootstrap/js/dist/tab";
 // import "bootstrap/js/dist/toast";
 import "bootstrap/js/dist/tooltip";
-
+import { debounce } from 'lodash-es';
 import jquery from "jquery";
 
 window.$ = window.jQuery = jquery;
@@ -57,7 +57,7 @@ $(document)
                 var text = $(this)
                     .text();
                 // insert some <wbr> at strategic places
-                var newtext = text.replace(/([@._+])/g, "$1<wbr>");
+                var newtext = text.replace(/(\S)([@._+])(\S)/g, "$1$2<wbr>$3");
                 if (newtext === text) {
                     return;
                 }
@@ -91,6 +91,55 @@ $(document)
         //     });
     });
 
+function overflowShadows(el) {
+    function handleScroll(){
+        const canScrollUp = el.scrollTop > 0
+        const canScrollDown = el.offsetHeight + el.scrollTop < el.scrollHeight
+        el.classList.toggle("overflow-shadows--both", canScrollUp && canScrollDown)
+        el.classList.toggle("overflow-shadows--top-only", canScrollUp && !canScrollDown)
+        el.classList.toggle("overflow-shadows--bottom-only", !canScrollUp && canScrollDown)
+    }
+
+    el.addEventListener("scroll", handleScroll, {passive: true})
+    handleScroll()
+
+    const observer = new IntersectionObserver(handleScroll)
+    observer.observe(el) // el won't have scrollTop etc when hidden, so we need to recalculate when it's revealed
+
+    return () => {
+        el.removeEventListener("scroll", handleScroll)
+        observer.unobserve(el)
+    }
+}
+
+function ensureDropdownOnscreen(elm) {
+    const handlePlacement = () => {
+        if(!(elm instanceof HTMLElement)) {
+            return
+        }
+        const rect = elm.getBoundingClientRect()
+        const BUFFER_PX = 5 // additional distance from bottom of viewport
+        const existingStyleTop = parseInt(elm.style.top, 10)
+        const offscreenBy = Math.round(window.innerHeight - (rect.top + rect.height) - BUFFER_PX)
+        if(existingStyleTop === offscreenBy) {
+            console.log(`Already set top to ${offscreenBy}. Ignoring`)
+            // already set, nothing to do
+            return
+        }
+        if(offscreenBy < 0) {
+            elm.style.top = `${offscreenBy}px`
+        } 
+    }
+
+    const debouncedHandler = debounce(handlePlacement, 100)
+        
+    const observer = new MutationObserver(debouncedHandler)
+
+    observer.observe(elm, {
+        attributes: true
+    })
+}
+
 $(document)
     .ready(function () {
         // load data for the menu
@@ -108,7 +157,7 @@ $(document)
                     }
                     attachTo.find(".dropdown-menu")
                         .remove();
-                    var menu = ['<ul class="dropdown-menu ms-n1 mt-n1">'];
+                    var menu = ['<ul class="dropdown-menu ms-n1 mt-n1 overflow-shadows">'];
                     var groups = data[parentId];
                     var gtype = "";
                     for (var i = 0; i < groups.length; ++i) {
@@ -123,10 +172,17 @@ $(document)
                             g.acronym + " &mdash; " + g.name + "</a></li>");
                     }
                     menu.push("</ul>");
-                    for (i = 0; i < attachTo.length; i++) {
-                        attachTo.closest(".dropdown-menu");
-                    }
+
                     attachTo.append(menu.join(""));
+
+                    attachTo.find(".overflow-shadows").each(function(){
+                        // needs to be a function(){} so that we can access jQuery's `this`
+                        overflowShadows(this)
+                    })
+                    attachTo.find(".dropdown-menu").each(function(){
+                        // needs to be a function(){} so that we can access jQuery's `this`
+                        ensureDropdownOnscreen(this)
+                    })
                 }
             }
         });

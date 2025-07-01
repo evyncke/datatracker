@@ -11,14 +11,17 @@ n-drawer(v-model:show='isShown', placement='bottom', :height='state.drawerHeight
             n-button(
               :type='agendaStore.isTimezoneMeeting ? `primary` : `default`'
               @click='setTimezone(`meeting`)'
+              :text-color='agendaStore.isTimezoneMeeting ? `#FFF` : null'
               ) Meeting
             n-button(
               :type='agendaStore.isTimezoneLocal ? `primary` : `default`'
               @click='setTimezone(`local`)'
+              :text-color='agendaStore.isTimezoneLocal ? `#FFF` : null'
               ) Local
             n-button(
               :type='agendaStore.timezone === `UTC` ? `primary` : `default`'
               @click='setTimezone(`UTC`)'
+              :text-color='agendaStore.timezone === `UTC` ? `#FFF` : null'
               ) UTC
           n-divider(vertical)
         n-button.me-2(
@@ -32,7 +35,7 @@ n-drawer(v-model:show='isShown', placement='bottom', :height='state.drawerHeight
           n-badge.ms-2(:value='agendaStore.selectedCatSubs.length', processing)
         n-button(
           ghost
-          color='gray'
+          :color='siteStore.theme === `dark` ? `#e35d6a` : `gray`'
           strong
           @click='close'
           )
@@ -184,6 +187,7 @@ function refreshData () {
   let earliestDate = DateTime.fromISO('2200-01-01')
   let latestDate = DateTime.fromISO('1990-01-01')
   let nowDate = DateTime.now()
+  let hasCrossDayEvents = false
 
   calendarOptions.events = agendaStore.scheduleAdjusted.map(ev => {
     // -> Determine boundaries
@@ -199,6 +203,9 @@ function refreshData () {
     if (ev.adjustedEnd < latestDate) {
       latestDate = ev.adjustedEnd
     }
+    if (ev.adjustedStart.day !== ev.adjustedEnd.day) {
+      hasCrossDayEvents = true
+    }
     // -> Build event object
     return {
       id: ev.id,
@@ -211,8 +218,8 @@ function refreshData () {
   })
 
   // -> Display settings
-  calendarOptions.slotMinTime = `${earliestHour.toString().padStart(2, '0')}:00:00`
-  calendarOptions.slotMaxTime = `${latestHour.toString().padStart(2, '0')}:00:00`
+  calendarOptions.slotMinTime = hasCrossDayEvents ? '00:00:00' : `${earliestHour.toString().padStart(2, '0')}:00:00`
+  calendarOptions.slotMaxTime = hasCrossDayEvents ? '23:59:59' : `${latestHour.toString().padStart(2, '0')}:00:00`
   calendarOptions.validRange.start = earliestDate.minus({ days: 1 }).toISODate()
   calendarOptions.validRange.end = latestDate.plus({ days: 1 }).toISODate()
   // calendarOptions.scrollTime = `${earliestHour.toString().padStart(2, '0')}:00:00`
@@ -323,7 +330,6 @@ function close () {
     }
 
     .badge {
-      width: 30px;
       font-size: .7em;
       border: 1px solid #CCC;
       text-transform: uppercase;

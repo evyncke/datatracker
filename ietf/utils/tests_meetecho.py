@@ -82,7 +82,7 @@ class APITests(TestCase):
                 'rooms': {
                     '3d55bce0-535e-4ba8-bb8e-734911cf3c32': {
                         'room': {
-                            'id': 18,
+                            'id': 18,  # should match room_id in api.schedule_meeting() below
                             'start_time': '2021-09-14 10:00:00',
                             'duration': 130,
                             'description': 'interim-2021-wgname-01',
@@ -97,6 +97,7 @@ class APITests(TestCase):
         api = MeetechoAPI(API_BASE, CLIENT_ID, CLIENT_SECRET)
         api_response = api.schedule_meeting(
             wg_token='my-token',
+            room_id=18,
             start_time=datetime.datetime(2021, 9, 14, 10, 0, 0, tzinfo=datetime.timezone.utc),
             duration=datetime.timedelta(minutes=130),
             description='interim-2021-wgname-01',
@@ -116,6 +117,7 @@ class APITests(TestCase):
         self.assertEqual(
             request.json(),
             {
+                'room_id': 18,
                 'duration': 130,
                 'start_time': '2021-09-14 10:00:00',
                 'extrainfo': 'message for staff',
@@ -485,7 +487,7 @@ class ConferenceManagerTests(TestCase):
             'rooms': {
                 'session-1-uuid': {
                     'room': {
-                        'id': 1,
+                        'id': 1,  # value should match session_id param to cm.create() below 
                         'start_time': datetime.datetime(2022,2,4,1,2,3, tzinfo=datetime.timezone.utc),
                         'duration': datetime.timedelta(minutes=45),
                         'description': 'some-description',
@@ -496,7 +498,7 @@ class ConferenceManagerTests(TestCase):
             },
         }
         cm = ConferenceManager(settings.MEETECHO_API_CONFIG)
-        result = cm.create('group', 'desc', 'starttime', 'dur', 'extra')
+        result = cm.create('group', '1', 'desc', 'starttime', 'dur', 'extra')
         self.assertEqual(
             result,
             [Conference(
@@ -515,6 +517,7 @@ class ConferenceManagerTests(TestCase):
             kwargs,
             {
                 'wg_token': 'atoken',
+                'room_id': 1,
                 'description': 'desc',
                 'start_time': 'starttime',
                 'duration': 'dur',
@@ -555,7 +558,7 @@ class SlidesManagerTests(TestCase):
                 deck={
                     "id": slides_doc.pk,
                     "title": slides_doc.title,
-                    "url": slides_doc.get_versionless_href(),
+                    "url": slides_doc.get_href(session.meeting),
                     "rev": slides_doc.rev,
                     "order": 13,
                 },
@@ -594,7 +597,7 @@ class SlidesManagerTests(TestCase):
                     {
                         "id": slides_doc.pk,
                         "title": slides_doc.title,
-                        "url": slides_doc.get_versionless_href(),
+                        "url": slides_doc.get_href(session.meeting),
                         "rev": slides_doc.rev,
                         "order": 1,
                     },
@@ -632,7 +635,7 @@ class SlidesManagerTests(TestCase):
                 deck={
                     "id": slides_doc.pk,
                     "title": slides_doc.title,
-                    "url": slides_doc.get_versionless_href(),
+                    "url": slides_doc.get_href(slides.session.meeting),
                     "rev": slides_doc.rev,
                     "order": 23,
                 },
@@ -657,7 +660,7 @@ class SlidesManagerTests(TestCase):
                     {
                         "id": slides.document_id,
                         "title": slides.document.title,
-                        "url": slides.document.get_versionless_href(),
+                        "url": slides.document.get_href(slides.session.meeting),
                         "rev": slides.document.rev,
                         "order": 0,
                     }
