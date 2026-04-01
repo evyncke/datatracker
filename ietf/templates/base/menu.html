@@ -435,8 +435,8 @@
         <ul class="dropdown-menu">
             <li>
                 <a class="dropdown-item{% if flavor != 'top' %} text-wrap{% endif %}"
-                   href="{% url 'ietf.stats.views.document_stats' %}">
-                    I-Ds/RFCs
+                   href="{% url 'ietf.stats.views.documents_timeline' doc_type='all' group_by='stream' %}">
+                    Documents
                 </a>
             </li>
             <li>

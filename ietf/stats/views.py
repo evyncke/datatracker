@@ -14,6 +14,7 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse as urlreverse
 from django.db.models import Count
+from django.db.models.functions import ExtractYear
 
 import debug                            # pyflakes:ignore
 
@@ -26,6 +27,7 @@ from ietf.group.models import Role, Group
 from ietf.person.models import Person
 from ietf.name.models import ReviewResultName, CountryName, ReviewAssignmentStateName
 from ietf.meeting.models import Registration
+from ietf.doc.models import Document, DocumentAuthor
 from ietf.ietfauth.utils import has_role
 from ietf.utils.response import permission_denied
 from ietf.utils.timezone import date_today, DEADLINE_TZINFO
@@ -112,12 +114,22 @@ def add_url_to_choices(choices, url_builder):
     """
     return [ (slug, label, url_builder(slug)) for slug, label in choices]
 
-def document_stats(request, stats_type=None):
+def old_document_stats(request, stats_type=None):
     # timeline per year, or per specific year: streams, affiliation, rfc vs I-D
     # could also be time between individual/WG I-D to rfc publication/IESG ballot
     # DISCUSS resolution time
     # Humm also split by authors (affiliation) / documents (the rest) probably
     """Redirect to the stats index page. Deprecated view."""
+    print("Deprecated view: redirecting to stats index")
+    return HttpResponseRedirect(urlreverse("ietf.stats.views.stats_index"))
+
+def authors_timeline(request, stats_type=None):
+    # timeline per year, or per specific year: streams, affiliation, rfc vs I-D
+    # could also be time between individual/WG I-D to rfc publication/IESG ballot
+    # DISCUSS resolution time
+    # Humm also split by authors (affiliation) / documents (the rest) probably
+    """Redirect to the stats index page. Deprecated view."""
+    print("Deprecated view: redirecting to stats index")
     return HttpResponseRedirect(urlreverse("ietf.stats.views.stats_index"))
 
 def known_countries_list(request, stats_type=None, acronym=None):
@@ -143,6 +155,7 @@ def canonicalize_affiliation(affiliation):
     """
     if not affiliation or affiliation.lower() in ('n/a', 'none', 'unspecified'):
         return None
+    affiliation = affiliation.strip()
     for suffix in ('ab', 'ag', 'corp', 'corp.', 'corporation', 'gmbh', 'inc.', 'inc', 'international pte ltd', 'llc', 'ltd', 'ltd.', 'private limited', 'pty ltd', 'pvt ltd'):
         if affiliation.lower().endswith(', ' + suffix):
             affiliation = affiliation[:-(len(suffix)+2)]
@@ -154,6 +167,169 @@ def canonicalize_affiliation(affiliation):
         if affiliation.lower().startswith(prefix + ' '):
             affiliation = prefix
     return affiliation.title()
+
+def get_authors_data_for_documents(doc_type = 'all', group_by = 'country', top_n = 20):
+    if doc_type != 'all':
+        queryset = DocumentAuthor.objects.filter(document__type_id=doc_type)
+    else:
+        queryset = DocumentAuthor.objects.all()
+    queryset = (
+        queryset
+        .select_related('person', 'document')
+        .filter(document__stream__isnull=False)
+    )
+
+# ── Step 1: Collect all meetings and tickets totals ──
+    years_set = set()
+    documents_totals = defaultdict(int)
+    data_map = defaultdict(dict)  # {year: {stream: count}}
+
+    for row in queryset:
+        year = row['year']
+        group = row[group_by]
+        if group_by == 'country':
+            if len(group) != 2 :
+                group = '??'
+        elif group_by == 'affiliation':
+            group = canonicalize_affiliation(group)
+
+        years_set.add(year)
+        documents_totals[group] += 1
+        data_map[year][group] = data_map[year].get(group, 0) + 1
+
+    # ── Step 2: Sort years numerically rather than alphabetically  ──
+    years_set = sorted(years_set)
+    # group_types = documents_totals.keys() 
+
+
+    # ── Step 3: Get top N  ──
+    top_groups = sorted(
+        documents_totals.keys(),
+        key=lambda c: documents_totals[c],
+        reverse=True
+    )[:top_n]
+    non_top_groups = documents_totals.keys() - top_groups
+    other_totals = defaultdict(int)
+    for m in years_set:
+        other_totals[m] = 0
+        for g in non_top_groups:
+            other_totals[m] += int(data_map[g].get(m, 0))
+
+    # ── Step 4: Build Chart.js datasets ──
+
+    datasets = []
+    for idx, group in enumerate(top_groups):
+        color = colors[idx % len(colors)]
+        datasets.append({
+            'label': group,
+            'data': [data_map[year].get(group, 0) for year in years_set],
+            'borderColor': color,
+            'backgroundColor': color + '99', # 60% opacity fill
+            'fill': False,
+            'tension': 0.0,
+            'pointColor': color,
+            'pointBackgroundColor': color,
+            'pointRadius': 4,
+            'pointHoverRadius': 6,
+            'borderWidth': 2,
+        })
+
+    return years_set, datasets
+
+def get_stream_data_for_documents(doc_type = 'all', group_by = 'stream__name'):
+    if doc_type != 'all':
+        queryset = Document.objects.filter(type_id=doc_type)
+    else:
+        queryset = Document.objects.all()
+    queryset = (
+        queryset
+        .filter(stream__isnull=False)
+        .annotate(year=ExtractYear('time'))
+        .values('year', group_by)
+        .annotate(count=Count('id'))
+        .order_by('year')
+    )
+
+# ── Step 1: Collect all meetings and tickets totals ──
+    years_set = set()
+    documents_totals = defaultdict(int)
+    data_map = defaultdict(dict)  # {year: {stream: count}}
+
+    for row in queryset:
+        year = row['year']
+        group = row[group_by]
+        count = row['count']
+
+        years_set.add(year)
+        documents_totals[group] += count
+        data_map[year][group] = count
+
+    # ── Step 2: Sort years numerically rather than alphabetically  ──
+    years_set = sorted(years_set)
+    group_types = documents_totals.keys() 
+
+    # ── Step 4: Build Chart.js datasets ──
+
+    datasets = []
+    for idx, group in enumerate(group_types):
+        color = colors[idx % len(colors)]
+        datasets.append({
+            'label': group,
+            'data': [data_map[year].get(group, 0) for year in years_set],
+            'borderColor': color,
+            'backgroundColor': color + '99', # 60% opacity fill
+            'fill': True,
+            'tension': 0.0,
+            'pointColor': color,
+            'pointBackgroundColor': color,
+            'pointRadius': 4,
+            'pointHoverRadius': 6,
+            'borderWidth': 2,
+        })
+
+    return years_set, datasets
+
+def documents_timeline(request, doc_type='all', group_by='stream', top_n=10):
+    """Render the documents timeline page with document statistics over time.
+
+    Args:
+        request: The HTTP request object.
+        stats_type: Type of statistics.
+        top_n: Number of top items to show (for country stats).
+
+    Returns:
+        Rendered response for the documents timeline template.
+    """
+
+    if group_by == 'affiliation':
+        total_labels, total_data_sets = get_authors_data_for_documents(doc_type, 'affiliation', top_n * 2)
+    elif group_by == 'country':
+        total_labels, total_data_sets = get_authors_data_for_documents(doc_type, 'country', top_n)
+    elif group_by == 'stream':
+        total_labels, total_data_sets = get_stream_data_for_documents(doc_type, 'stream__name')
+    else:
+        return HttpResponseRedirect(urlreverse("ietf.stats.views.stats_index"))
+
+    # Serialize to JSON for safe injection into the template
+    chart_data = json.dumps({
+        'labels': total_labels,
+        'datasets': total_data_sets,
+    })
+
+    # Prepare the list of choice buttons for the template
+    possible_docs_types = [
+        ("all documents", "All documents", urlreverse(documents_timeline, kwargs={'doc_type': 'all', 'group_by': group_by})),
+        ("draft", "Drafts", urlreverse(documents_timeline, kwargs={'doc_type': 'draft', 'group_by': group_by})),
+        ("RFC", "RFC", urlreverse(documents_timeline, kwargs={'doc_type': 'rfc', 'group_by': group_by})),
+    ]
+
+    return render(request, "stats/documents_timeline.html", {
+        "top_n": top_n,
+        "possible_docs_types": possible_docs_types,
+        "doc_type": doc_type,
+        "group_by": group_by,
+        "chart_data": chart_data,
+    })
 
 def get_affiliation_data_for_meetings(top_n, attendance_type=None):
     """Get affiliation participation data for meetings timeline chart.
@@ -189,7 +365,7 @@ def get_affiliation_data_for_meetings(top_n, attendance_type=None):
     # ── Step 2: Sort meetings numerically rather than alphabetically  ──
     sorted_meetings = sorted(meetings_set, key=lambda x: int(x) if x.isdigit() else x)
 
-    # ── Step 3: Get top N countries ──
+    # ── Step 3: Get top N  ──
     top_orgs = sorted(
         org_totals.keys(),
         key=lambda c: org_totals[c],
