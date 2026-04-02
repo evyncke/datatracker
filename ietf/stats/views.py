@@ -2,10 +2,12 @@
 # -*- coding: utf-8 -*-
 
 
+from ast import pattern
 import calendar
 import datetime
 import itertools
 import json
+import re
 import dateutil.relativedelta
 from collections import defaultdict
 
@@ -29,6 +31,7 @@ from ietf.name.models import ReviewResultName, CountryName, ReviewAssignmentStat
 from ietf.meeting.models import Registration
 from ietf.doc.models import Document, DocumentAuthor
 from ietf.ietfauth.utils import has_role
+from ietf.utils import text
 from ietf.utils.response import permission_denied
 from ietf.utils.timezone import date_today, DEADLINE_TZINFO
 from ietf.meeting.helpers import get_current_ietf_meeting_num, get_ietf_meeting
@@ -144,6 +147,51 @@ def known_countries_list(request, stats_type=None, acronym=None):
         "countries": countries,
     })
 
+def canonicalize_country(country):
+    if country is None or country.strip() == '':
+        return 'Unspecified'
+    country = country.strip().lower()
+    if country in ('china', 'chinese', 'p.r. china', 'prc', 'cn', 'p.r.china', 'p.r. china') or country.endswith(' china'):
+        return 'China'
+    elif country in ('uk', 'u.k.', 'gb', 'united kingdom', 'england', 'scotland', 'wales') or country.endswith(' uk'):
+        return 'United Kingdom'
+    elif country in ('germany', 'deutschland', 'de') or country.endswith(' germany'):
+        return 'Germany'
+    elif country in ('the netherlands', 'nederland', 'holland', 'nl'):
+        return 'Netherlands'
+    elif country in ('france', 'fr'):
+        return 'France'
+    elif country in ('belgium', 'be') or country.endswith(' belgium'):
+        return 'Belgium'
+    elif country in ('sweden', 'se') or country.endswith(' sweden'):
+        return 'Sweden'
+    elif country in ('new zealand', 'nz') or country.endswith(' new zealand'):
+        return 'New Zealand'
+    elif country in ('canada', 'ca'):
+        return 'Canada'
+    elif country in ('india', 'in') or country.endswith(' india'):
+        return 'India'
+    elif country in ('australia', 'au'):
+        return 'Australia'
+    elif country in ('japan', 'jp'):
+        return 'Japan'
+    elif country in ('italy', 'it'):
+        return 'Italy'
+    elif country in ('finland', 'finlandia', 'suomi', 'fi') or country.endswith(' finland'):
+        return 'Finland'
+    elif country in ('russia', 'ru', 'россия', 'российская федерация', 'russian federation', 'ussr', 'soviet union', 'u.s.s.r.'):
+        return 'Russia'
+    elif country in ('republic of korea', 'south korea', 'kr', 'korea'):
+        return 'South Korea'
+    # Should do a regex match here instead of hardcoding all the variations, but for now this is good enough
+    elif (
+        country in ('usa', 'united states', 'united states of america', 'us', 'u.s.', 'u.s.a.', 'u.s.a') or
+        country.endswith(' usa') or 
+        re.match(r'^([a-z\s\.\-]+),*\s*([a-z]{2}),*\s+(\d{5}(-\d{4})?)$', country)
+    ):
+        return 'USA'
+    return country.title()
+
 def canonicalize_affiliation(affiliation):
     """Canonicalize an affiliation string by removing common suffixes and standardizing prefixes.
 
@@ -177,6 +225,7 @@ def get_authors_data_for_documents(doc_type = 'all', group_by = 'country', top_n
         queryset
         .select_related('person', 'document')
         .filter(document__stream__isnull=False)
+        .all()
     )
 
 # ── Step 1: Collect all meetings and tickets totals ──
@@ -185,13 +234,21 @@ def get_authors_data_for_documents(doc_type = 'all', group_by = 'country', top_n
     data_map = defaultdict(dict)  # {year: {stream: count}}
 
     for row in queryset:
-        year = row['year']
-        group = row[group_by]
+#        print(row)
+#        print(row.document)
+        year = row.document.pub_date().year if row.document.pub_date() else None
+#        print(year)
+        group = getattr(row, group_by)
         if group_by == 'country':
-            if len(group) != 2 :
-                group = '??'
-        elif group_by == 'affiliation':
-            group = canonicalize_affiliation(group)
+            if len(group) == 0 :
+                group = 'Unspecified'
+            else:
+                group = canonicalize_country(group)
+        if group_by == 'affiliation':
+            if len(group) == 0 :
+                group = 'Unspecified'
+            else:
+                group = canonicalize_affiliation(group)
 
         years_set.add(year)
         documents_totals[group] += 1
@@ -201,8 +258,7 @@ def get_authors_data_for_documents(doc_type = 'all', group_by = 'country', top_n
     years_set = sorted(years_set)
     # group_types = documents_totals.keys() 
 
-
-    # ── Step 3: Get top N  ──
+    # ── Step 3: Get top N and others ──
     top_groups = sorted(
         documents_totals.keys(),
         key=lambda c: documents_totals[c],
@@ -210,10 +266,10 @@ def get_authors_data_for_documents(doc_type = 'all', group_by = 'country', top_n
     )[:top_n]
     non_top_groups = documents_totals.keys() - top_groups
     other_totals = defaultdict(int)
-    for m in years_set:
-        other_totals[m] = 0
+    for y in years_set:
+        other_totals[y] = 0
         for g in non_top_groups:
-            other_totals[m] += int(data_map[g].get(m, 0))
+            other_totals[y] += int(data_map[y].get(g, 0))
 
     # ── Step 4: Build Chart.js datasets ──
 
@@ -234,6 +290,20 @@ def get_authors_data_for_documents(doc_type = 'all', group_by = 'country', top_n
             'borderWidth': 2,
         })
 
+    # -- Step 4.bis handle the other --
+    datasets.append({
+        'label': 'Other',
+        'data': [other_totals.get(year, 0) for year in years_set],
+        'borderColor': 'black',
+        'fill': False,
+        'tension': 0.0,
+        'pointColor': 'black',
+        'pointBackgroundColor': 'black',
+        'pointRadius': 4,
+        'pointHoverRadius': 6,
+        'borderWidth': 2,
+    })
+
     return years_set, datasets
 
 def get_stream_data_for_documents(doc_type = 'all', group_by = 'stream__name'):
@@ -244,10 +314,6 @@ def get_stream_data_for_documents(doc_type = 'all', group_by = 'stream__name'):
     queryset = (
         queryset
         .filter(stream__isnull=False)
-        .annotate(year=ExtractYear('time'))
-        .values('year', group_by)
-        .annotate(count=Count('id'))
-        .order_by('year')
     )
 
 # ── Step 1: Collect all meetings and tickets totals ──
@@ -256,13 +322,15 @@ def get_stream_data_for_documents(doc_type = 'all', group_by = 'stream__name'):
     data_map = defaultdict(dict)  # {year: {stream: count}}
 
     for row in queryset:
-        year = row['year']
-        group = row[group_by]
-        count = row['count']
+        if not row.pub_date():
+            continue
+        year = row.pub_date().year
+        if group_by == 'stream__name':
+            group = row.stream.name
 
         years_set.add(year)
-        documents_totals[group] += count
-        data_map[year][group] = count
+        documents_totals[group] += 1
+        data_map[year][group] = data_map[year].get(group, 0) + 1
 
     # ── Step 2: Sort years numerically rather than alphabetically  ──
     years_set = sorted(years_set)
@@ -304,7 +372,7 @@ def documents_timeline(request, doc_type='all', group_by='stream', top_n=10):
     if group_by == 'affiliation':
         total_labels, total_data_sets = get_authors_data_for_documents(doc_type, 'affiliation', top_n * 2)
     elif group_by == 'country':
-        total_labels, total_data_sets = get_authors_data_for_documents(doc_type, 'country', top_n)
+        total_labels, total_data_sets = get_authors_data_for_documents(doc_type, 'country', top_n * 4)
     elif group_by == 'stream':
         total_labels, total_data_sets = get_stream_data_for_documents(doc_type, 'stream__name')
     else:
