@@ -446,7 +446,7 @@ def meetings_timeline(request, stats_type='country'):
 
     # On per country/affiliation have a separate graph for inperson
     if stats_type == 'total':
-        in_person_chart_data = {}
+        in_person_chart_data = None
     else:
         in_person_chart_data = {
             'labels': in_person_labels,

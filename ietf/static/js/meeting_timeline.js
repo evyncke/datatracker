@@ -64,20 +64,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const totalChart = displayChart('totalRegistrationChart', totalChartData)
-    if (inPersonChartData != null) {
+    if (inPersonChartData !== null) {
         inPersonChart = displayChart('inPersonRegistrationChart', inPersonChartData)
     }
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
             totalChart.resetZoom()
-            if (inPersonChart != null) {
+            if (inPersonChart !== null) {
                 inPersonChart.resetZoom()
             }
         }
     })
     document.getElementById('resetButton').addEventListener('click', () => {
         totalChart.resetZoom()
-        if (inPersonChart != null) {
+        if (inPersonChart !== null) {
             inPersonChart.resetZoom()
         }
     })
