@@ -410,20 +410,19 @@ def meetings_timeline(request, stats_type='country', top_n=10):
     else:
         return HttpResponseRedirect(urlreverse("ietf.stats.views.stats_index"))
 
-    # Serialize to JSON for safe injection into the template
-    total_chart_data = json.dumps({
+    total_chart_data = {
         'labels': total_labels,
         'datasets': total_data_sets,
-    })
+    }
 
     # On per country/affiliation have a separate graph for inperson
     if stats_type == 'total':
-        in_person_chart_data = json.dumps(None)
+        in_person_chart_data = {}
     else:
-        in_person_chart_data = json.dumps({
+        in_person_chart_data = {
             'labels': in_person_labels,
             'datasets': in_person_data_sets,
-        })
+        }
 
     # Prepare the list of choice buttons for the template
     possible_stats_types = [
@@ -558,8 +557,7 @@ def meeting_stats(request, meeting_number=None, stats_type='country'):
     else:
         return HttpResponseRedirect(urlreverse("ietf.stats.views.stats_index"))
 
-    # Serialize to JSON for safe injection into the template
-    total_chart_data = json.dumps({
+    total_chart_data = {
         'labels': total_labels,
         'datasets': [{
             'label': 'Total Registrations by ' + stats_type,
@@ -567,8 +565,8 @@ def meeting_stats(request, meeting_number=None, stats_type='country'):
             'borderColor': '#ffffff',
             'borderWidth': 2,
         }]
-    })
-    in_person_chart_data = json.dumps({
+    }
+    in_person_chart_data = {
         'labels': in_person_labels,
         'datasets': [{
             'label': 'In Person Registrations by ' + stats_type,
@@ -576,7 +574,7 @@ def meeting_stats(request, meeting_number=None, stats_type='country'):
             'borderColor': '#ffffff',
             'borderWidth': 2,
         }]
-    })
+    }
 
     # Prepare the list of choice buttons for the template
     possible_stats_types = [
