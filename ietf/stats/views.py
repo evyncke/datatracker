@@ -9,6 +9,7 @@ import json
 import dateutil.relativedelta
 from collections import defaultdict
 
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
 from django.http import HttpResponseRedirect
@@ -166,7 +167,6 @@ def get_affiliation_data_for_meetings(attendance_type=None):
         Tuple of (sorted_meetings, datasets) for Chart.js.
     """
     cache_key = f'stats:get_affiliation_data_for_meetings:{attendance_type}'
-    cache_timeout = 86400
     sorted_meetings, datasets = cache.get(cache_key, (None, None))
     if (sorted_meetings, datasets) == (None, None):
         top_n = 20  # could be a parameter, but would need to adjust cache handling
@@ -239,7 +239,11 @@ def get_affiliation_data_for_meetings(attendance_type=None):
             'pointHoverRadius': 6,
             'borderWidth': 2,
         })
-        cache.set(cache_key, (sorted_meetings, datasets), cache_timeout)
+        cache.set(
+            cache_key,
+            (sorted_meetings, datasets),
+            settings.STATS_TIMELINE_CACHE_TIMEOUT,
+        )
 
     return sorted_meetings, datasets
 
@@ -253,7 +257,6 @@ def get_country_data_for_meetings(attendance_type=None):
         Tuple of (sorted_meetings, datasets) for Chart.js.
     """
     cache_key = f'stats:get_country_data_for_meetings:{attendance_type}'
-    cache_timeout = 86400
     sorted_meetings, datasets = cache.get(cache_key, (None, None))
     if (sorted_meetings, datasets) == (None, None):
         top_n = 10  # could be a parameter, but would need to adjust cache handling
@@ -335,7 +338,11 @@ def get_country_data_for_meetings(attendance_type=None):
             'pointHoverRadius': 6,
             'borderWidth': 2,
         })
-        cache.set(cache_key, (sorted_meetings, datasets), cache_timeout)
+        cache.set(
+            cache_key,
+            (sorted_meetings, datasets),
+            settings.STATS_TIMELINE_CACHE_TIMEOUT,
+        )
 
     return sorted_meetings, datasets
 
@@ -346,7 +353,6 @@ def get_data_for_meetings():
         Tuple of (sorted_meetings, datasets) for Chart.js.
     """
     cache_key = "stats:get_data_for_meetings"
-    cache_timeout = 86400
     sorted_meetings, datasets = cache.get(cache_key, (None, None))
     if (sorted_meetings, datasets) == (None, None):
         # Get registration status counts, aggregated by ticket types
@@ -399,7 +405,11 @@ def get_data_for_meetings():
                 'pointHoverRadius': 6,
                 'borderWidth': 2,
             })
-        cache.set(cache_key, (sorted_meetings, datasets), cache_timeout)
+        cache.set(
+            cache_key,
+            (sorted_meetings, datasets),
+            settings.STATS_TIMELINE_CACHE_TIMEOUT,
+        )
     return sorted_meetings, datasets
 
 def meetings_timeline(request, stats_type='country'):
