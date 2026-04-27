@@ -400,6 +400,8 @@ def meetings_timeline(request, stats_type='country', top_n=10):
 
     if stats_type == 'total':
         total_labels, total_data_sets = get_data_for_meetings()
+        in_person_labels = ([], [])
+        in_person_data_sets = ([], [])
     elif stats_type == 'affiliation':
         top_n = 20  # For affiliations we can have more entries, so show more by default
         total_labels, total_data_sets = get_affiliation_data_for_meetings(top_n)
