@@ -346,7 +346,7 @@ def get_stream_data_for_documents(doc_type = 'all', group_by = 'stream__name'):
             'data': [data_map[year].get(group, 0) for year in years_set],
             'borderColor': color,
             'backgroundColor': color + '99', # 60% opacity fill
-            'fill': True,
+            'fill': False,
             'tension': 0.0,
             'pointColor': color,
             'pointBackgroundColor': color,
